@@ -524,6 +524,7 @@ private fun phraseBarPlan(
     phraseBars: Int,
     mixAnchor: Double,
     advanced: Boolean,
+    allowTempoStretch: Boolean = true,
 ): TransitionPlan? {
     val outgoingBpm = analysis.bpm.orZero()
     if (outgoingBpm < MIN_BPM || outgoingBpm > MAX_BPM) return null
@@ -566,11 +567,12 @@ private fun phraseBarPlan(
     // Tempo handling mirrors the adaptive blend: fold the incoming tempo into
     // the outgoing octave, stretch only what a speed-up can meet, and never slow
     // the incoming deck under Advanced.
-    val policy = assessTransitionTier(analysis, nextAnalysis, advanced)
+    val policy = assessTransitionTier(analysis, nextAnalysis, advanced, allowTempoStretch = allowTempoStretch)
     val beatmatched = policy.tier == TransitionTier.BEATMATCHED
     val nextBpm = nextAnalysis.bpm.orZero()
     val alignedIncomingBpm = alignTempoOctave(outgoingBpm, nextBpm)
-    val tempoFar = nextBpm > 0 && !stretchReachable(outgoingBpm, nextBpm)
+    val tempoFar = nextBpm > 0 && (!stretchReachable(outgoingBpm, nextBpm) ||
+        !allowTempoStretch && requiresTempoStretch(outgoingBpm, nextBpm))
     val mediaRatio =
         if (nextBpm > 0 && !tempoFar) roundRate(1.0 / normalizedTempoRatio(outgoingBpm, nextBpm)) else 1.0
     val incomingPlaybackRate = incomingRateFor(mediaRatio, advanced)
@@ -1068,8 +1070,10 @@ private fun phraseSwitch(
     length: Double,
     nextLength: Double,
     advanced: Boolean,
+    allowTempoStretch: Boolean = true,
 ): TransitionPlan? {
     if (!harmonicallyCompatible(trustedKey(analysis), trustedKey(nextAnalysis))) return null
+    if (!allowTempoStretch && requiresTempoStretch(analysis.bpm, nextAnalysis.bpm)) return null
 
     val planned = planWsolaTransition(
         analysis = analysis,
@@ -1192,12 +1196,17 @@ private const val MAX_REROUTE_CANDIDATES = 3
  * once per tick and shared by every exit [planTransition] tries, so the
  * whole-curve passes here are never repeated per candidate.
  */
-private class PairTraits(analysis: TrackAnalysis, nextAnalysis: TrackAnalysis) {
+private class PairTraits(
+    analysis: TrackAnalysis,
+    nextAnalysis: TrackAnalysis,
+    allowTempoStretch: Boolean = true,
+) {
     private val currentBpm = analysis.bpm.orZero()
     private val nextBpm = nextAnalysis.bpm.orZero()
 
     /** Too far apart for either to be sped up to the other, so both kicks would flam. */
-    val tempoFar = currentBpm > 0 && nextBpm > 0 && !stretchReachable(currentBpm, nextBpm)
+    val tempoFar = currentBpm > 0 && nextBpm > 0 && (!stretchReachable(currentBpm, nextBpm) ||
+        !allowTempoStretch && requiresTempoStretch(currentBpm, nextBpm))
     val keyClash: Boolean = run {
         val left = trustedKey(analysis)
         val right = trustedKey(nextAnalysis)
@@ -1283,6 +1292,7 @@ private fun adaptiveOverlap(
     traits: PairTraits? = null,
     energy: Double = 1.0,
     filterVariant: FilterTransitionVariant = FilterTransitionVariant.SWEEP,
+    allowTempoStretch: Boolean = true,
 ): Overlap {
     val currentBpm = analysis.bpm.orZero()
     val nextBpm = nextAnalysis.bpm.orZero()
@@ -1326,6 +1336,7 @@ private fun adaptiveOverlap(
         // the two players. Advanced stretches anything a speed-up can meet.
         incomingPlaybackRate = when {
             traits != null -> if (traits.tempoFar) 1.0 else roundRate(1 / ratio)
+            !allowTempoStretch -> 1.0
             1 / ratio in MIN_INCOMING_RATE..MAX_INCOMING_RATE -> roundRate(1 / ratio)
             else -> 1.0
         },
@@ -1419,6 +1430,10 @@ fun planTransition(
     advanced: Boolean = false,
     phraseBars: Int = 0,
     mixWindow: Boolean = false,
+    /** Beat-aware mode: either weak grid forces a plain crossfade (default: existing behaviour). */
+    strictConfidence: Boolean = false,
+    /** False leaves both tracks at their recorded tempo and uses a no-stretch handoff instead. */
+    allowTempoStretch: Boolean = true,
 ): TransitionPlan {
     val plan = planTransitionInner(
         analysis = analysis,
@@ -1433,6 +1448,8 @@ fun planTransition(
         albumSequential = albumSequential,
         advanced = advanced,
         phraseBars = phraseBars,
+        strictConfidence = strictConfidence,
+        allowTempoStretch = allowTempoStretch,
     )
     if (!mixWindow) return plan
     return clampToMixWindow(
@@ -1481,6 +1498,8 @@ private fun planTransitionInner(
     albumSequential: Boolean = false,
     advanced: Boolean = false,
     phraseBars: Int = 0,
+    strictConfidence: Boolean = false,
+    allowTempoStretch: Boolean = true,
 ): TransitionPlan {
     val length = max(duration.orZero(), trackDurationSeconds(currentTrack))
     val playbackTime = max(0.0, currentTime.orZero())
@@ -1547,7 +1566,13 @@ private fun planTransitionInner(
             preferredMixAnchor
         }
 
-    val policy = assessTransitionTier(analysis, nextAnalysis, advanced)
+    val policy = assessTransitionTier(
+        analysis,
+        nextAnalysis,
+        advanced,
+        strictConfidence,
+        allowTempoStretch,
+    )
     if (policy.tier == TransitionTier.PLAIN_CROSSFADE) {
         val transitionStart = max(0.0, mixAnchor - standardFade)
         val started = playbackTime >= transitionStart
@@ -1610,6 +1635,7 @@ private fun planTransitionInner(
             phraseBars = phraseBars,
             mixAnchor = mixAnchor,
             advanced = advanced,
+            allowTempoStretch = allowTempoStretch,
         )?.let { plan ->
             if (playbackTime < plan.transitionEnd) {
                 val started = playbackTime >= plan.transitionStart
@@ -1626,7 +1652,7 @@ private fun planTransitionInner(
         }
     }
 
-    phraseSwitch(analysis, nextAnalysis, length, nextLength, advanced)
+    phraseSwitch(analysis, nextAnalysis, length, nextLength, advanced, allowTempoStretch)
         ?.takeIf { playbackTime < it.transitionEnd }
         ?.let { plan ->
             val started = playbackTime >= plan.transitionStart
@@ -1641,8 +1667,16 @@ private fun planTransitionInner(
             )
         }
 
-    val traits = if (advanced) PairTraits(analysis, nextAnalysis) else null
-    val primary = mixPlan(analysis, nextAnalysis, mixAnchor, mixOutAnchor.type, nextLength, traits)
+    val traits = if (advanced) PairTraits(analysis, nextAnalysis, allowTempoStretch) else null
+    val primary = mixPlan(
+        analysis,
+        nextAnalysis,
+        mixAnchor,
+        mixOutAnchor.type,
+        nextLength,
+        traits,
+        allowTempoStretch,
+    )
     // An exit where the outgoing track is still singing over the incoming one
     // is worth trading for another the analysis ranked, if one halves the
     // collision. Only planned while it could still be taken: once the playhead
@@ -1654,7 +1688,7 @@ private fun planTransitionInner(
         rankedMixOuts.asSequence()
             .filter { abs(it.time - mixAnchor) > 1.0 && it.time <= length }
             .take(MAX_REROUTE_CANDIDATES)
-            .map { mixPlan(analysis, nextAnalysis, it.time, it.type, nextLength, traits) }
+            .map { mixPlan(analysis, nextAnalysis, it.time, it.type, nextLength, traits, allowTempoStretch) }
             .filter { playbackTime < it.transitionStart }
             .minByOrNull { it.vocalOverlap }
             ?.takeIf { it.vocalOverlap <= primary.vocalOverlap * VOCAL_REROUTE_GAIN }
@@ -1686,6 +1720,7 @@ private fun mixPlan(
     mixOutType: String,
     nextLength: Double,
     traits: PairTraits?,
+    allowTempoStretch: Boolean = true,
 ): TransitionPlan {
     val currentBpm = analysis.bpm.orZero()
     val nextBpm = nextAnalysis.bpm.orZero()
@@ -1701,7 +1736,7 @@ private fun mixPlan(
         1.0
     }
     val (overlap, transitionBeats, incomingPlaybackRate) = adaptiveOverlap(
-        analysis, nextAnalysis, traits, energy, filterVariant,
+        analysis, nextAnalysis, traits, energy, filterVariant, allowTempoStretch,
     )
     val handoffBpm = if (currentBpm > 0) currentBpm else nextBpm
     // Advanced also blends any pair a speed-up matches on two trusted grids —

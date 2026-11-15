@@ -78,6 +78,12 @@ fun incomingRateBetween(outgoingBpm: Double, incomingBpm: Double): Double {
     return outgoingBpm / alignTempoOctave(outgoingBpm, incomingBpm)
 }
 
+/** Whether this pair would need a rate other than 1, after octave folding. */
+fun requiresTempoStretch(outgoingBpm: Double, incomingBpm: Double): Boolean {
+    val rate = incomingRateBetween(outgoingBpm, incomingBpm)
+    return rate.isFinite() && abs(rate - 1.0) > 1e-9
+}
+
 /** Whether a blend can beatmatch this pair inside [MIN_INCOMING_RATE]..[MAX_INCOMING_RATE]. */
 fun stretchReachable(outgoingBpm: Double, incomingBpm: Double): Boolean {
     val rate = incomingRateBetween(outgoingBpm, incomingBpm)
@@ -479,6 +485,10 @@ fun assessTransitionTier(
     nextAnalysis: TrackAnalysis,
     /** Advanced Automix: the same stretch window as classic ([stretchReachable]); kept for callers. */
     advanced: Boolean = false,
+    /** Beat-aware mode: one weak grid forces a plain fade, not just two weak grids together. */
+    strictConfidence: Boolean = false,
+    /** False keeps both decks at their original tempo; such a pair cannot be beatmatched. */
+    allowTempoStretch: Boolean = true,
 ): TransitionPolicyVerdict {
     val outgoingBpm = analysis.bpm.orZero()
     val incomingBpm = nextAnalysis.bpm.orZero()
@@ -493,7 +503,10 @@ fun assessTransitionTier(
         return TransitionPolicyVerdict(TransitionTier.PLAIN_CROSSFADE, reasons, floorConfidence)
     }
 
-    if (outgoingConfidence < MIN_DJ_CONFIDENCE && incomingConfidence < MIN_DJ_CONFIDENCE) {
+    if (outgoingConfidence < MIN_DJ_CONFIDENCE && incomingConfidence < MIN_DJ_CONFIDENCE ||
+        strictConfidence &&
+        (outgoingConfidence < MIN_DJ_CONFIDENCE || incomingConfidence < MIN_DJ_CONFIDENCE)
+    ) {
         return TransitionPolicyVerdict(
             TransitionTier.PLAIN_CROSSFADE,
             listOf("beat-confidence"),
@@ -501,7 +514,12 @@ fun assessTransitionTier(
         )
     }
 
-    if (!stretchReachable(outgoingBpm, incomingBpm)) reasons += "tempo-distance"
+    val reachable = stretchReachable(outgoingBpm, incomingBpm)
+    if (!allowTempoStretch && reachable && requiresTempoStretch(outgoingBpm, incomingBpm)) {
+        reasons += "stretch-disabled"
+    } else if (!reachable) {
+        reasons += "tempo-distance"
+    }
     if (outgoingConfidence < MIN_BEATMATCH_CONFIDENCE || incomingConfidence < MIN_BEATMATCH_CONFIDENCE) {
         reasons += "beat-confidence"
     }
