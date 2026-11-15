@@ -34,6 +34,7 @@ import com.music.bitchord.playback.smart.TransitionStyle
 import com.music.bitchord.playback.smart.TransitionTrackInfo
 import com.music.bitchord.playback.smart.echoTailSeconds
 import com.music.bitchord.playback.smart.planTransition
+import com.music.bitchord.playback.transitions.BeatAwareConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1096,6 +1097,13 @@ class CrossfadeController(
         // The DJ planner is Automix now; there is no separate mode switch.
         val advanced = true
 
+        val beatAware = BeatAwareConfig(
+            enabled = AppSettings.beatAwareTransitions.value,
+            phraseAligned = AppSettings.beatAwarePhraseAligned.value,
+            tempoMatching = AppSettings.beatAwareTempoMatching.value,
+            albumGapless = AppSettings.beatAwareAlbumGapless.value,
+        ).optionsFor(duration / 1000.0)
+
         val plan = planTransition(
             analysis = currentAnalysis,
             nextAnalysis = nextAnalysis,
@@ -1106,6 +1114,11 @@ class CrossfadeController(
             fadeSeconds = fallbackSeconds,
             mode = CrossfadeMode.SMART,
             advanced = advanced,
+            phraseBars = beatAware.phraseBars,
+            albumSequential = beatAware.albumSequential,
+            mixWindow = beatAware.mixWindow,
+            strictConfidence = beatAware.strictConfidence,
+            allowTempoStretch = beatAware.allowTempoStretch,
         )
         // One line per distinct verdict rather than one per 250ms tick, so the
         // log says what the planner decided for this pair without burying it.
@@ -1387,6 +1400,7 @@ class CrossfadeController(
         durationMs = durationMs,
         title = mediaMetadata.title?.toString().orEmpty(),
         artist = mediaMetadata.artist?.toString().orEmpty(),
+        album = mediaMetadata.albumTitle?.toString().orEmpty(),
     )
 
     /**

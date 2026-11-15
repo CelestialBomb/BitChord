@@ -1307,4 +1307,12 @@
     <string name="bit_perfect_status_inexact">%1$s · 정확하지 않음: 이 소스는 무손실 PCM이 아닙니다</string>
     <string name="bit_perfect_status_waiting">지원되는 출력에서 무손실 트랙을 기다리는 중</string>
     <string name="bit_perfect_status_unavailable">이 트랙에서 사용할 수 없음(%1$s)</string>
+    <string name="beat_aware_title">비트 인식 전환</string>
+    <string name="beat_aware_subtitle">Use trusted beat and phrase analysis; fall back to a normal crossfade when it is missing</string>
+    <string name="beat_aware_phrase">프레이즈 정렬 전환</string>
+    <string name="beat_aware_phrase_subtitle">Enter and leave on downbeats in 8- or 16-bar phrases</string>
+    <string name="beat_aware_tempo">템포 맞추기</string>
+    <string name="beat_aware_tempo_subtitle">Adjust the incoming track during a blend; off preserves both original tempos</string>
+    <string name="beat_aware_album">앨범 내 끊김 없는 재생</string>
+    <string name="beat_aware_album_subtitle">Keep consecutive tracks from the same album almost seamless instead of mixing them</string>
 </resources>

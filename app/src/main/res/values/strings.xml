@@ -278,6 +278,14 @@
     <string name="automix_mode_balanced_subtitle">2 threads · recommended balance of speed, heat and battery</string>
     <string name="automix_mode_performance">Performance</string>
     <string name="automix_mode_performance_subtitle">4 threads · fastest analysis · higher heat and battery use</string>
+    <string name="beat_aware_title">Beat-aware transitions</string>
+    <string name="beat_aware_subtitle">Use trusted beat and phrase analysis; fall back to a normal crossfade when it is missing</string>
+    <string name="beat_aware_phrase">Phrase-aligned transitions</string>
+    <string name="beat_aware_phrase_subtitle">Enter and leave on downbeats in 8- or 16-bar phrases</string>
+    <string name="beat_aware_tempo">Match tempo</string>
+    <string name="beat_aware_tempo_subtitle">Adjust the incoming track during a blend; off preserves both original tempos</string>
+    <string name="beat_aware_album">Gapless within albums</string>
+    <string name="beat_aware_album_subtitle">Keep consecutive tracks from the same album almost seamless instead of mixing them</string>
     <string name="skip_silence">Skip silence</string>
     <string name="skip_silence_subtitle">Trim gaps longer than a second</string>
     <string name="skip_silence_float_subtitle">Unavailable on 32-bit float output</string>
