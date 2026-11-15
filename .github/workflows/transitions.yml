@@ -1,0 +1,62 @@
+name: Transitions
+
+# Built against BitChord v1.9.1. No secrets: no API keys, no signing keys, no
+# release publishing. Android APK only (see docs/transitions-design.md).
+on:
+  push:
+    branches: [transitions]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: transitions-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android tests and dev APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/transitions' }}
+
+      # Deliberately no local.properties secrets: the build falls back to empty
+      # Last.fm keys and the public default party URL, and AGP generates a
+      # throwaway debug keystore. Nothing to sign or publish here.
+      - run: chmod +x gradlew
+
+      - name: Planner and shared-module tests
+        run: ./gradlew :shared:jvmTest -Pbitchord.bundleWear=false
+
+      - name: App unit tests
+        run: ./gradlew testDevDebugUnitTest -Pbitchord.bundleWear=false
+
+      - name: Build the dev APK
+        run: ./gradlew assembleDevDebug -Pbitchord.bundleWear=false
+
+      - name: Upload the dev APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitchord-transitions-dev-debug
+          path: app/build/outputs/apk/dev/debug/*.apk
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transitions-test-reports
+          path: |
+            shared/build/reports/tests/
+            app/build/reports/tests/
+          if-no-files-found: ignore
