@@ -1297,7 +1297,11 @@ class CrossfadeController(
                     "conf=${currentAnalysis.beatConfidence}/${nextAnalysis.beatConfidence} " +
                     "analysis=${analysisState.current}/${analysisState.next} nextDur=${nextDuration}ms " +
                     "window=${(plan.transitionStart * 1000).roundToLong()}-${(plan.transitionEnd * 1000).roundToLong()}ms " +
-                    "album=\"${currentItem.mediaMetadata.albumTitle}\"/\"${nextItem.mediaMetadata.albumTitle}\"",
+                    // What the planner's same-album rule compares: album title
+                    // and artist, both exact (no album ID is passed yet).
+                    "album=\"${currentItem.mediaMetadata.albumTitle ?: ""}\"/\"${nextItem.mediaMetadata.albumTitle ?: ""}\" " +
+                    "artist=\"${currentItem.mediaMetadata.artist ?: ""}\"/\"${nextItem.mediaMetadata.artist ?: ""}\" " +
+                    "albumGapless=${beatAware.albumSequential}",
             )
         }
 
