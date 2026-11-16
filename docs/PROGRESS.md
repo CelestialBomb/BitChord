@@ -5,7 +5,7 @@ Newest first. Update after every step and commit with it. See `CLAUDE.md` /
 
 ## Current state (16 Nov 2026)
 
-Branch `transitions`. Spec v0.3. Shared JVM tests: 139 in 21 suites, all pass.
+Branch `transitions`. Spec v0.3. Shared JVM tests: 145 in 21 suites, all pass.
 App unit tests (`testDevDebugUnitTest`, locale test skipped as in CI): 1242,
 0 failures, 1 skipped. Dev APK builds and is installed on the test phone
 (`com.dev.bitchord`, arm64).
@@ -15,8 +15,9 @@ App unit tests (`testDevDebugUnitTest`, locale test skipped as in CI): 1242,
 | # | Bug | Status |
 |---|---|---|
 | 1 | Transitions loop: play "Dream, Ivory" (Dream, Ivory), Play next "I Can't Say Goodbye (Unmuffled)" (iOS, not a video), go back to "Dream, Ivory" and let it end: the last ~10 s repeat until the song's time runs out. | **Fixed, confirmed on device** 16 Nov (no loop; log below). The loop mix itself still fails for this pair (see "Loop mix fails near the song end"). |
-| 2 | Play next / Add to queue never gets a DJ mix. | Hook committed. Bug 1 log: a Play next pair was planned within 70 ms; some pairs got a DJ blend, others were unmixable by tempo. **Awaiting a targeted test.** |
-| 3 | Gapless within albums doesn't fire on Juelz's DRAMATICA: no album ID is passed, and the title+artist check is too strict. | Not fixed. Plan line now logs album, artist and the setting. **Awaiting a DRAMATICA log.** |
+| 2 | Play next / Add to queue never gets a DJ mix. | **Audio fixed, confirmed on device** 16 Nov. Remaining: the mix window doesn't show on the progress bar after Play next (2b below). |
+| 2b | After Play next, no mix section on the progress bar / overview. | Cause found (not a missing refresh). **Fix needs a UI decision**, see below. |
+| 3 | Gapless within albums doesn't fire on Juelz's DRAMATICA: no album ID is passed, and the title+artist check is too strict. | **Fix committed** `d604cb28`, unit-tested; **awaiting device test**. |
 | 4 | Automix overview (mix popup) sometimes shows visual glitches; works most of the time. | **Low priority.** Waiting for a screenshot from the user. |
 
 ### Bug 1: device log (16 Nov, dev build `2c0c1b2b`+)
@@ -34,6 +35,48 @@ Dream, Ivory (`1EkVojVV_3I`, 188 s) -> i cant say goodbye(unmuffled) (`4iqrRR84Z
    re-armed: this was bug 1).
 5. Gate -> plain crossfade armed at 184.8 s, `smart-plain-crossfade`, 6 s planned but
    only 3.5 s left; handed off and finished at 16:29:22. No second failure.
+
+### Bug 3: device log and fix (16 Nov)
+
+DRAMATICA, shuffle off. Track 1 "start the drama (intro)" (82.3 s) -> track 2
+"HIGHER": album `DRAMATICA`/`DRAMATICA`, artist `Juelz`/`Juelz`, setting on, yet
+`smart-phrase-8-bar` with the window at 54.9-68.6 s (67-83 %). The album match
+passed; R3 was skipped by its extra `!hasInteriorMixOut` condition (analysis
+found an exit 13.7 s before the end). Track 2 -> 3 "MY MY MY" would also have
+failed: artist `Juelz` vs `Juelz, Z3lla` (exact match).
+
+Fix (`d604cb28`):
+- R3 no longer requires "no interior mix-out". Only reachable with
+  `albumSequential`, which nothing passed before Beat-aware, so fixtures 001-008
+  are unchanged (verified: all 11 existing fixtures re-recorded identical).
+- `sameAlbum`: album IDs decide when both sides have one; otherwise album title
+  (trimmed, case-insensitive) plus at least one shared credited artist.
+- The controller passes the `bitchord.albumId` extra, and asks for album gapless
+  only with shuffle off. The plan line logs `albumId=` and `shuffle=`.
+- New tests: 6 in `BeatAwarePlannerTest`, fixtures 012 and 013 (`androidOnly`).
+
+PC port needed: `sameAlbum` and R3 in `src/transitions/`, then drop `androidOnly`
+from 012-013. Design doc R3 wording should say "played in order (shuffle off)".
+
+### Bug 2b: why the mix window doesn't show after Play next (16 Nov log)
+
+Spring Carnival -> Regenerate (Play next at 202 s of 264 s):
+- 16:35:34 queue changed; the marker was re-evaluated within 230 ms: hidden,
+  `next is WAITING`, `nextDur=0ms`. So the hook and refresh work.
+- 16:35:46 the next song's opening had downloaded; analysis ran (ANALYSING).
+- 16:36:02 analysis landed. The marker was shown in the same tick the blend
+  armed (window 233.6 s, armed at 230.5 s) and is cleared when the blend starts
+  (`startFade`), so it was on screen for ~3 s at most.
+
+The marker is gated on both songs being analysed, by design ("a marker that
+slides along the bar while you watch it is worse than none"). A song never
+played before needs its opening downloaded and analysed, ~28 s here, so a late
+Play next shows no window. A song analysed earlier showed its marker 1.4 s after
+Play next (Dream, Ivory -> i cant say goodbye, 16:35:02).
+
+Options (user to choose): a provisional, dimmed window while the new song is
+analysed (it can move once analysis lands); or keep the gate and show
+"analysing next song" in the overview instead.
 
 ### Loop mix fails near the song end (new, from the bug 1 log)
 
@@ -91,13 +134,9 @@ verdict), `loop` verdicts, `gate` (a pair held back by the failure record),
 
 ## Next
 
-1. Bug 2 device test (Play next and Add to queue with tempo-compatible songs);
-   read the `plan` and `start` lines for the new pair.
-2. Bug 3 device test on DRAMATICA; read `album=`, `artist=`, `albumGapless=` and the
-   reason. Then pass an album ID through `toTransitionInfo` and relax the
-   same-album check (exact artist match fails on features); add fixtures.
-   Note the rule is also skipped when analysis finds an interior mix-out
-   (`hasInteriorMixOut` in `TransitionPlanner`).
+1. Bug 3 device test: DRAMATICA tracks 1 -> 2 -> 3 should be gapless
+   (`same-album-gapless` in the log).
+2. Bug 2b: implement the option the user picks.
 3. Loop mix failing near the song end (above).
 4. Mix popup glitches, when a screenshot arrives (low priority).
 5. Update the design doc (section 4: failure record and queue hook; section 9)
