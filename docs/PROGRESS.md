@@ -14,9 +14,37 @@ App unit tests (`testDevDebugUnitTest`, locale test skipped as in CI): 1242,
 
 | # | Bug | Status |
 |---|---|---|
-| 1 | Transitions loop: play "Dream, Ivory" (Dream, Ivory), Play next "I Can't Say Goodbye (Unmuffled)" (iOS, not a video), go back to "Dream, Ivory" and let it end: the last ~10 s repeat until the song's time runs out. | Fix committed, **awaiting device repro with logs** |
-| 2 | Play next / Add to queue never gets a DJ mix. | Queue-change hook committed; cause not yet confirmed on device |
-| 3 | Gapless within albums doesn't fire on Juelz's DRAMATICA: no album ID is passed, and the title+artist check is too strict. | Not started |
+| 1 | Transitions loop: play "Dream, Ivory" (Dream, Ivory), Play next "I Can't Say Goodbye (Unmuffled)" (iOS, not a video), go back to "Dream, Ivory" and let it end: the last ~10 s repeat until the song's time runs out. | **Fixed, confirmed on device** 16 Nov (no loop; log below). The loop mix itself still fails for this pair (see "Loop mix fails near the song end"). |
+| 2 | Play next / Add to queue never gets a DJ mix. | Hook committed. Bug 1 log: a Play next pair was planned within 70 ms; some pairs got a DJ blend, others were unmixable by tempo. **Awaiting a targeted test.** |
+| 3 | Gapless within albums doesn't fire on Juelz's DRAMATICA: no album ID is passed, and the title+artist check is too strict. | Not fixed. Plan line now logs album, artist and the setting. **Awaiting a DRAMATICA log.** |
+| 4 | Automix overview (mix popup) sometimes shows visual glitches; works most of the time. | **Low priority.** Waiting for a screenshot from the user. |
+
+### Bug 1: device log (16 Nov, dev build `2c0c1b2b`+)
+
+Dream, Ivory (`1EkVojVV_3I`, 188 s) -> i cant say goodbye(unmuffled) (`4iqrRR84Znk`):
+
+1. Play next at 16:28:25 changed the next song; the pair was re-planned at once.
+   DJ planner: `before-unmixable-crossfade` (60 vs 138 BPM, `tempo-distance,unmixable-pair`).
+   Loop mix planned instead: 4-bar loops at 164.03 s, 60 -> 69 BPM, next in double time.
+2. Loop mix started arming at 152.1 s, decks built in 1.15 s, took over at 164.0 s
+   (planned mix length 41.2 s, handover 12.1 s into the incoming song).
+3. At 184.6 s (3.7 s before the end, no handoff yet): `a sink was flushed`.
+   Recorded as failure 1 -> `PLAIN_CROSSFADE`.
+4. Settle: **no seek back** to 168.7 s (the old code would have jumped back 16 s and
+   re-armed: this was bug 1).
+5. Gate -> plain crossfade armed at 184.8 s, `smart-plain-crossfade`, 6 s planned but
+   only 3.5 s left; handed off and finished at 16:29:22. No second failure.
+
+### Loop mix fails near the song end (new, from the bug 1 log)
+
+The loop mix took over at 164 s with a 41 s mix on a 188 s song, and had not
+handed off 20 s later when the sink was flushed 3.7 s before the file end.
+Hypothesis (not confirmed): the outgoing player keeps advancing through its own
+file during the loop, reaches its end before the mix hands over, and that
+flushes the sink. Next step: log the outgoing player's position and the mix
+clock (`handoffAt`, `elementAt`) at takeover and at each loop wrap, and check
+whether `LoopMix.plan` should refuse a mix whose handover lands past the end of
+the outgoing file.
 
 ### Bug 1: what was done
 
@@ -63,14 +91,16 @@ verdict), `loop` verdicts, `gate` (a pair held back by the failure record),
 
 ## Next
 
-1. Reproduce bug 1 on the phone with the capture running. Confirm in the log that
-   the mix fails at most twice for the pair and the end never replays. Read
-   why the loop mix fails.
-2. Reproduce bug 2 (Play next, Add to queue) and read the `plan` lines for the
-   new pair: analysis state, `nextDur`, reason.
-3. Bug 3: pass an album ID through `toTransitionInfo` and relax the same-album
-   check; add fixtures.
-4. Update the design doc (section 4: failure record and queue hook; section 9)
+1. Bug 2 device test (Play next and Add to queue with tempo-compatible songs);
+   read the `plan` and `start` lines for the new pair.
+2. Bug 3 device test on DRAMATICA; read `album=`, `artist=`, `albumGapless=` and the
+   reason. Then pass an album ID through `toTransitionInfo` and relax the
+   same-album check (exact artist match fails on features); add fixtures.
+   Note the rule is also skipped when analysis finds an interior mix-out
+   (`hasInteriorMixOut` in `TransitionPlanner`).
+3. Loop mix failing near the song end (above).
+4. Mix popup glitches, when a screenshot arrives (low priority).
+5. Update the design doc (section 4: failure record and queue hook; section 9)
    in both forks.
 
 ## Open questions
