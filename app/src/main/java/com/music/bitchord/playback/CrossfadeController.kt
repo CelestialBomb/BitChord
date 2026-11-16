@@ -1261,6 +1261,7 @@ class CrossfadeController(
             tempoMatching = AppSettings.beatAwareTempoMatching.value,
             albumGapless = AppSettings.beatAwareAlbumGapless.value,
         ).optionsFor(duration / 1000.0)
+        val albumInOrder = beatAware.albumSequential && !player.shuffleModeEnabled
 
         // After a failure the planner is shown no analysis, which is its own
         // rule for a plain crossfade at the listener's length (R5).
@@ -1275,7 +1276,9 @@ class CrossfadeController(
             mode = CrossfadeMode.SMART,
             advanced = advanced,
             phraseBars = beatAware.phraseBars,
-            albumSequential = beatAware.albumSequential,
+            // "Played in order" (R3): two album siblings shuffled next to each
+            // other are a mix, not the album.
+            albumSequential = albumInOrder,
             mixWindow = beatAware.mixWindow,
             strictConfidence = beatAware.strictConfidence,
             allowTempoStretch = beatAware.allowTempoStretch,
@@ -1301,7 +1304,8 @@ class CrossfadeController(
                     // and artist, both exact (no album ID is passed yet).
                     "album=\"${currentItem.mediaMetadata.albumTitle ?: ""}\"/\"${nextItem.mediaMetadata.albumTitle ?: ""}\" " +
                     "artist=\"${currentItem.mediaMetadata.artist ?: ""}\"/\"${nextItem.mediaMetadata.artist ?: ""}\" " +
-                    "albumGapless=${beatAware.albumSequential}",
+                    "albumId=\"${albumIdOf(currentItem)}\"/\"${albumIdOf(nextItem)}\" " +
+                    "albumGapless=${beatAware.albumSequential} shuffle=${player.shuffleModeEnabled}",
             )
         }
 
@@ -1569,14 +1573,22 @@ class CrossfadeController(
         return if (seconds > 0) seconds * 1000L else 0L
     }
 
-    /** BitChord doesn't carry album metadata on [MediaMetadata] yet, so [TransitionTrackInfo.album] stays blank. */
+    /**
+     * The planner's view of a queue item. The album ID comes from the extras
+     * the queue row was built with (see [toSong]); without it the planner
+     * falls back to comparing album title and artists.
+     */
     private fun MediaItem.toTransitionInfo(durationMs: Long) = TransitionTrackInfo(
         id = mediaId,
         durationMs = durationMs,
         title = mediaMetadata.title?.toString().orEmpty(),
         artist = mediaMetadata.artist?.toString().orEmpty(),
         album = mediaMetadata.albumTitle?.toString().orEmpty(),
+        albumId = albumIdOf(this),
     )
+
+    private fun albumIdOf(item: MediaItem): String =
+        item.mediaMetadata.extras?.getString(EXTRA_ALBUM_ID).orEmpty()
 
     /**
      * Loads the standby player with the queue, positioned on the incoming track

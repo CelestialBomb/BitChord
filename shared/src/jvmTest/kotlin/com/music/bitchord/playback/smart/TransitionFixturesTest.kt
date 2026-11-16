@@ -91,6 +91,21 @@ class TransitionFixturesTest {
             outgoing = track("a", 120.0, duration = 300.0),
             incoming = track("b", 120.0, duration = 300.0),
         ),
+        // Android-only until the PC port has the relaxed album match.
+        "012-beat-aware-album-featured-artist" to FixtureCase(
+            name = "Beat-aware: an album played in order stays gapless when the next track has a featured artist",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true),
+            outgoing = track("a", 140.0).copy(album = "Made-up Album", artist = "Made-up Artist"),
+            incoming = track("b", 140.0).copy(album = "Made-up Album", artist = "Made-up Artist, Guest"),
+            androidOnly = true,
+        ),
+        "013-beat-aware-album-ids-differ" to FixtureCase(
+            name = "Beat-aware: two releases with the same title are different albums when their IDs differ",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true),
+            outgoing = track("a", 120.0).copy(album = "Greatest Hits", artist = "Made-up Artist", albumId = "release-1"),
+            incoming = track("b", 120.0).copy(album = "Greatest Hits", artist = "Made-up Artist", albumId = "release-2"),
+            androidOnly = true,
+        ),
     )
 
     private fun planFor(case: FixtureCase): TransitionPlan = with(

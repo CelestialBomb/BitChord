@@ -322,11 +322,30 @@ private fun fallbackVariantFor(
  * lands two album siblings back to back is a mix, and gets mixed; the caller
  * decides which of those it is via `albumSequential` and says so explicitly.
  */
-private fun sameAlbum(left: TransitionTrackInfo?, right: TransitionTrackInfo?): Boolean {
+internal fun sameAlbum(left: TransitionTrackInfo?, right: TransitionTrackInfo?): Boolean {
     if (left == null || right == null) return false
-    if (left.albumId.isNotBlank() && left.albumId == right.albumId) return true
-    return left.album.isNotBlank() && left.album == right.album && left.artist == right.artist
+    // An album ID on both sides is the answer: equal is the same release,
+    // different is two releases that may well share a title ("Greatest Hits").
+    if (left.albumId.isNotBlank() && right.albumId.isNotBlank()) return left.albumId == right.albumId
+    // Without IDs: the same album title, and at least one credited artist in
+    // common. Exact artist equality failed on every featured track — "Juelz"
+    // and "Juelz, Z3lla" are the same album's artist.
+    val album = left.album.trim()
+    if (album.isEmpty() || !album.equals(right.album.trim(), ignoreCase = true)) return false
+    val leftArtists = creditedArtists(left.artist)
+    val rightArtists = creditedArtists(right.artist)
+    if (leftArtists.isEmpty() && rightArtists.isEmpty()) return true
+    return leftArtists.any { it in rightArtists }
 }
+
+private val ARTIST_SEPARATORS = Regex(
+    """\s*(?:,|&|;|/|\bfeat\.?\s|\bft\.?\s|\bfeaturing\s|\bwith\s|\bx\s)\s*""",
+    RegexOption.IGNORE_CASE,
+)
+
+/** "Juelz, Z3lla feat. Someone" -> {juelz, z3lla, someone}. */
+internal fun creditedArtists(artist: String): Set<String> =
+    artist.split(ARTIST_SEPARATORS).map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
 
 /** Folds [nextBpm] into the same octave as [currentBpm] and returns the ratio between them. */
 private fun normalizedTempoRatio(currentBpm: Double, nextBpm: Double): Double {
@@ -1526,9 +1545,12 @@ private fun planTransitionInner(
     val mixOutAnchor = rankedMixOuts.firstOrNull()
         ?.let { MixOutAnchor(it.time, it.type, it.discardedMusicSeconds) }
         ?: MixOutAnchor(finalMixAnchor, "content_end", 0.0)
-    val hasInteriorMixOut = mixOutAnchor.time < finalMixAnchor - 1
-
-    if (albumSequential && sameAlbum(currentTrack, nextTrack) && !hasInteriorMixOut) {
+    // An album played through is gapless as recorded, whatever exit point the
+    // analysis found inside the track (design doc R3). Requiring no interior
+    // mix-out here turned DRAMATICA's intro into a DJ mix that cut its last
+    // 14 seconds. Only reachable with albumSequential, which nothing passed
+    // before Beat-aware transitions, so legacy plans are unchanged.
+    if (albumSequential && sameAlbum(currentTrack, nextTrack)) {
         val transitionStart = max(0.0, length - 0.45)
         val started = playbackTime >= transitionStart
         return TransitionPlan(
