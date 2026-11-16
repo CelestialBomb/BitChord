@@ -213,6 +213,8 @@ internal fun PlayerScrubber(
     transitionWindow: ClosedFloatingPointRange<Float>?,
     onScrub: (Float) -> Unit,
     onScrubFinished: () -> Unit,
+    /** See [ThinSlider.transitionWindowProvisional]. Before [centerLabel], which callers pass as a trailing lambda. */
+    transitionWindowProvisional: Boolean = false,
     centerLabel: @Composable BoxScope.() -> Unit = {},
 ) {
     val shown = shown()
@@ -233,6 +235,7 @@ internal fun PlayerScrubber(
             mixing = mixing,
             mixPulse = mixPulse,
             transitionWindow = transitionWindow,
+            transitionWindowProvisional = transitionWindowProvisional,
         )
         Box(
             modifier = Modifier

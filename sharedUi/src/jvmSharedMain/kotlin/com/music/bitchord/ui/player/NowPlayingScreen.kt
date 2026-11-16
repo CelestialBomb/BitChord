@@ -1992,6 +1992,7 @@ fun NowPlayingScreen(
                             transitionWindow = transitionWindow
                                 ?.takeIf { !scrub.scrubbing && it.end > it.start }
                                 ?.let { it.start..it.end },
+                            transitionWindowProvisional = transitionWindow?.provisional == true,
                             onScrub = onScrub,
                             onScrubFinished = onScrubFinished,
                         ) {
@@ -2214,6 +2215,7 @@ fun NowPlayingScreen(
                                     transitionWindow = transitionWindow
                                         ?.takeIf { !scrub.scrubbing && it.end > it.start }
                                         ?.let { it.start..it.end },
+                                    transitionWindowProvisional = transitionWindow?.provisional == true,
                                     onScrub = onScrub,
                                     onScrubFinished = onScrubFinished,
                                 ) {
@@ -4110,6 +4112,7 @@ fun NowPlayingScreen(
                         transitionWindow = transitionWindow
                             ?.takeIf { !scrub.scrubbing && it.end > it.start }
                             ?.let { it.start..it.end },
+                        transitionWindowProvisional = transitionWindow?.provisional == true,
                         onScrub = onScrub,
                         onScrubFinished = onScrubFinished,
                     ) {

@@ -36,8 +36,12 @@ data class SmartAnalysis(
 /**
  * A span of the playing track, in fractions of its duration, that the next transition is planned to
  * occupy.
+ *
+ * [provisional] while a song of the pair is still being analysed (Beat-aware
+ * transitions only): the span is the planner's fallback guess, drawn dimmed,
+ * and may move when the analysis lands.
  */
-data class TransitionWindow(val start: Float, val end: Float)
+data class TransitionWindow(val start: Float, val end: Float, val provisional: Boolean = false)
 
 /**
  * An Automix blend in flight, as the scrubber draws it: the beat it is running

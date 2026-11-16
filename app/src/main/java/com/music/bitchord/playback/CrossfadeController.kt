@@ -1372,27 +1372,41 @@ class CrossfadeController(
             analysisState.next in MEASURED_ENOUGH_TO_ENTER_ON &&
             // Last, because it is the only one that can read the cache.
             nextStreamReady(nextItem)
+        // Beat-aware only: a pair that is merely still being measured shows the
+        // planner's current guess, dimmed, instead of nothing. Without it a song
+        // added with Play next showed no window until its analysis landed —
+        // about 28 s for a song never played before, often seconds before the
+        // blend itself. The guess can move when the analysis lands; the
+        // dimming is what says so. Off, the window waits as it always has.
+        val provisional = !markable &&
+            AppSettings.beatAwareTransitions.value &&
+            !plan.blocked &&
+            plan.markerVisible &&
+            duration > 0L
         val markerVerdict = when {
             markable -> "shown"
             plan.blocked -> "hidden: plan blocked (${plan.reason})"
             !plan.markerVisible -> "hidden: plan has no marker (${plan.reason})"
             duration <= 0L -> "hidden: no duration"
-            analysisState.current != TrackAnalysisState.ANALYSED -> "hidden: current is ${analysisState.current}"
-            analysisState.next !in MEASURED_ENOUGH_TO_ENTER_ON -> "hidden: next is ${analysisState.next}"
-            else -> "hidden: next stream not ready"
+            else -> (if (provisional) "provisional" else "hidden") + ": " + when {
+                analysisState.current != TrackAnalysisState.ANALYSED -> "current is ${analysisState.current}"
+                analysisState.next !in MEASURED_ENOUGH_TO_ENTER_ON -> "next is ${analysisState.next}"
+                else -> "next stream not ready"
+            }
         }
         if (markerVerdict != lastMarkerVerdict) {
             lastMarkerVerdict = markerVerdict
             Log.d(
-                TAG,
+                TRANSITION_TAG,
                 "marker ${currentItem.mediaId} \"${currentItem.mediaMetadata.title}\" -> " +
                     "${nextItem.mediaId} \"${nextItem.mediaMetadata.title}\": $markerVerdict",
             )
         }
-        AppSettings.smartTransitionWindow.value = if (markable) {
+        AppSettings.smartTransitionWindow.value = if (markable || provisional) {
             TransitionWindow(
                 start = (plan.transitionStart * 1000.0 / duration).toFloat().coerceIn(0f, 1f),
                 end = (plan.transitionEnd * 1000.0 / duration).toFloat().coerceIn(0f, 1f),
+                provisional = provisional,
             )
         } else {
             null
@@ -3114,7 +3128,25 @@ class CrossfadeController(
             return "Automix · loop mix in ${ceil(inSeconds).toInt()} s · ${describeLoop(planned)}"
         }
         val plan = lastSmartPlan
-        if (plan != null && !plan.blocked && next != null && AppSettings.smartTransitionWindow.value != null) {
+        val window = AppSettings.smartTransitionWindow.value
+        if (plan != null && !plan.blocked && next != null && window?.provisional == true) {
+            // The dimmed window on the bar: say what it is waiting for.
+            val inSeconds = ((lastSmartPlanStartMs - player.currentPosition) / 1000.0).coerceAtLeast(0.0)
+            val whenText = if (inSeconds > 0) "in ${ceil(inSeconds).toInt()} s" else "now"
+            val currentState = stateOf(item, analysisFor(item))
+            val nextState = stateOf(next, analysisFor(next))
+            val waitingOn = when {
+                currentState == TrackAnalysisState.FAILED || nextState == TrackAnalysisState.FAILED ->
+                    "couldn't analyse ${if (currentState == TrackAnalysisState.FAILED) "this song" else "the next song"}"
+                currentState != TrackAnalysisState.ANALYSED && nextState !in MEASURED_ENOUGH_TO_ENTER_ON ->
+                    "analysing both songs"
+                currentState != TrackAnalysisState.ANALYSED -> "analysing this song"
+                nextState !in MEASURED_ENOUGH_TO_ENTER_ON -> "analysing the next song"
+                else -> "waiting for the next song's audio"
+            }
+            return "Automix · $waitingOn · provisional mix $whenText"
+        }
+        if (plan != null && !plan.blocked && next != null && window != null) {
             val inSeconds = ((lastSmartPlanStartMs - player.currentPosition) / 1000.0).coerceAtLeast(0.0)
             val whenText = if (inSeconds > 0) "in ${ceil(inSeconds).toInt()} s" else "now"
             val bars = if (plan.beatSeconds > 0) (plan.fadeSeconds / (4 * plan.beatSeconds)).roundToInt() else 0
