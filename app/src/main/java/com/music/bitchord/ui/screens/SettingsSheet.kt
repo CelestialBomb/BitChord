@@ -161,6 +161,8 @@ import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.data.settings.OutputPcmMode
 import com.music.bitchord.data.settings.BitPerfectMode
 import com.music.bitchord.playback.AudioOutputStatus
+import com.music.bitchord.playback.transitions.BlendLength
+import com.music.bitchord.playback.transitions.MixStyle
 import com.music.bitchord.playback.audio.bitperfect.BitPerfectOutput
 import com.music.bitchord.data.settings.AutomixPerformanceMode
 import com.music.bitchord.R
@@ -236,6 +238,8 @@ fun SettingsScreen(
     val beatAwarePhraseAligned by AppSettings.beatAwarePhraseAligned.collectAsStateWithLifecycle()
     val beatAwareTempoMatching by AppSettings.beatAwareTempoMatching.collectAsStateWithLifecycle()
     val beatAwareAlbumGapless by AppSettings.beatAwareAlbumGapless.collectAsStateWithLifecycle()
+    val automixStyle by AppSettings.automixStyle.collectAsStateWithLifecycle()
+    val automixBlendLength by AppSettings.automixBlendLength.collectAsStateWithLifecycle()
     val skipSilence by AppSettings.skipSilence.collectAsStateWithLifecycle()
     val dolbyAtmos by AppSettings.dolbyAtmos.collectAsStateWithLifecycle()
     val directSourceStream by AppSettings.directSourceStream.collectAsStateWithLifecycle()
@@ -839,6 +843,51 @@ fun SettingsScreen(
                 }
             }
             if (smartFade) {
+                val styleTitle = stringResource(R.string.automix_style)
+                row(styleTitle, "style", "preset", "fade", "rise", "quick", "filter") {
+                    BypassedByBitPerfect(bitPerfectReady) {
+                        Column {
+                            SettingsRow(
+                                icon = SfIcons.Waves,
+                                title = styleTitle,
+                                subtitle = stringResource(R.string.automix_style_subtitle),
+                            )
+                            SegmentedControl(
+                                options = listOf(
+                                    stringResource(R.string.automix_style_smooth),
+                                    stringResource(R.string.automix_style_fade),
+                                    stringResource(R.string.automix_style_rise),
+                                    stringResource(R.string.automix_style_quick),
+                                ),
+                                selectedIndex = MixStyle.entries.indexOf(automixStyle),
+                                onSelect = { AppSettings.setAutomixStyle(MixStyle.entries[it]) },
+                                modifier = Modifier.padding(start = TEXT_INSET, end = ROW_INSET, bottom = 14.dp),
+                            )
+                        }
+                    }
+                }
+                val lengthTitle = stringResource(R.string.automix_length)
+                row(lengthTitle, "length", "duration", "short", "long") {
+                    BypassedByBitPerfect(bitPerfectReady) {
+                        Column {
+                            SettingsRow(
+                                icon = SfIcons.Tune,
+                                title = lengthTitle,
+                                subtitle = stringResource(R.string.automix_length_subtitle),
+                            )
+                            SegmentedControl(
+                                options = listOf(
+                                    stringResource(R.string.automix_length_short),
+                                    stringResource(R.string.automix_length_medium),
+                                    stringResource(R.string.automix_length_long),
+                                ),
+                                selectedIndex = BlendLength.entries.indexOf(automixBlendLength),
+                                onSelect = { AppSettings.setAutomixBlendLength(BlendLength.entries[it]) },
+                                modifier = Modifier.padding(start = TEXT_INSET, end = ROW_INSET, bottom = 14.dp),
+                            )
+                        }
+                    }
+                }
                 val beatAwareTitle = stringResource(R.string.beat_aware_title)
                 row(beatAwareTitle, "beat aware", "phrase", "section") {
                     BypassedByBitPerfect(bitPerfectReady) {

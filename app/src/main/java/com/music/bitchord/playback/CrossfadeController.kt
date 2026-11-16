@@ -36,6 +36,7 @@ import com.music.bitchord.playback.smart.echoTailSeconds
 import com.music.bitchord.playback.smart.planTransition
 import com.music.bitchord.playback.transitions.BeatAwareConfig
 import com.music.bitchord.playback.transitions.TransitionFailureLog
+import com.music.bitchord.playback.transitions.applyMixStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1265,7 +1266,7 @@ class CrossfadeController(
 
         // After a failure the planner is shown no analysis, which is its own
         // rule for a plain crossfade at the listener's length (R5).
-        val plan = planTransition(
+        val plannerPlan = planTransition(
             analysis = if (plainOnly) TrackAnalysis() else currentAnalysis,
             nextAnalysis = if (plainOnly) TrackAnalysis() else nextAnalysis,
             currentTrack = currentItem.toTransitionInfo(duration),
@@ -1283,9 +1284,20 @@ class CrossfadeController(
             strictConfidence = beatAware.strictConfidence,
             allowTempoStretch = beatAware.allowTempoStretch,
         )
+        // The listener's style and length, over the planner's choice. Only a
+        // mix the planner chose is restyled; every fallback stays as planned.
+        val mixStyle = AppSettings.automixStyle.value
+        val blendLength = AppSettings.automixBlendLength.value
+        val plan = applyMixStyle(
+            plannerPlan, mixStyle, blendLength,
+            durationSeconds = duration / 1000.0,
+            currentTime = player.currentPosition / 1000.0,
+        )
         // One line per distinct verdict rather than one per 250ms tick, so the
         // log says what the planner decided for this pair without burying it.
         val verdict = "${plan.reason}|${plan.transitionStyle}|fade=${plan.fadeMs}" +
+            "|style=${mixStyle.key}/${blendLength.key}" +
+            (if (plan !== plannerPlan) "(planner ${plannerPlan.transitionStyle} ${plannerPlan.fadeMs}ms)" else "") +
             "|cue=${plan.incomingCueTime}|rate=${plan.incomingPlaybackRate}" +
             "|vocalOverlap=${"%.2f".format(Locale.ROOT, plan.vocalOverlap)}" +
             "|advanced=$advanced|lock=${plan.phaseLock}|variant=${plan.filterVariant}|echo=${plan.echoSeconds}" +
