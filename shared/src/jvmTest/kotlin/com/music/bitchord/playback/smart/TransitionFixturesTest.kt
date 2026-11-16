@@ -1,6 +1,9 @@
 package com.music.bitchord.playback.smart
 
 import com.music.bitchord.playback.transitions.BeatAwareConfig
+import com.music.bitchord.playback.transitions.BlendLength
+import com.music.bitchord.playback.transitions.MixStyle
+import com.music.bitchord.playback.transitions.applyMixStyle
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -106,9 +109,59 @@ class TransitionFixturesTest {
             incoming = track("b", 120.0).copy(album = "Greatest Hits", artist = "Made-up Artist", albumId = "release-2"),
             androidOnly = true,
         ),
+        // Style presets and blend length (design doc 0.4). Android-only until the PC port has applyMixStyle.
+        "014-style-fade" to FixtureCase(
+            name = "Style Fade: the matched blend becomes an equal-power fade on the same timing",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true, mixStyle = "fade"),
+            outgoing = track("a", 120.0),
+            incoming = track("b", 120.0),
+            androidOnly = true,
+        ),
+        "015-style-rise" to FixtureCase(
+            name = "Style Rise: the matched blend becomes a filter sweep",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true, mixStyle = "rise"),
+            outgoing = track("a", 120.0),
+            incoming = track("b", 120.0),
+            androidOnly = true,
+        ),
+        "016-style-quick-caps-16-bars" to FixtureCase(
+            name = "Style Quick: a sixteen-bar blend is cut to eight bars, ending where it did",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true, mixStyle = "quick"),
+            outgoing = track("a", 120.0, duration = 300.0),
+            incoming = track("b", 120.0, duration = 300.0),
+            androidOnly = true,
+        ),
+        "017-length-long" to FixtureCase(
+            name = "Length Long: eight bars become twelve, inside the last 30 s",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true, blendLength = "long"),
+            outgoing = track("a", 120.0),
+            incoming = track("b", 120.0),
+            androidOnly = true,
+        ),
+        "018-style-never-overrides-a-fallback" to FixtureCase(
+            name = "Style Rise and length Short leave a weak-grid plain crossfade alone",
+            settings = FixtureSettings(
+                beatAware = true,
+                phraseAligned = true,
+                albumGapless = true,
+                mixStyle = "rise",
+                blendLength = "short",
+            ),
+            outgoing = track("a", 120.0),
+            incoming = track("b", 120.0).let { it.copy(analysis = it.analysis.copy(beatConfidence = 0.1)) },
+            androidOnly = true,
+        ),
     )
 
-    private fun planFor(case: FixtureCase): TransitionPlan = with(
+    private fun planFor(case: FixtureCase): TransitionPlan = applyMixStyle(
+        rawPlanFor(case),
+        MixStyle.fromKey(case.settings.mixStyle),
+        BlendLength.fromKey(case.settings.blendLength),
+        durationSeconds = case.outgoing.analysis.duration,
+        currentTime = case.positionSeconds,
+    )
+
+    private fun rawPlanFor(case: FixtureCase): TransitionPlan = with(
         BeatAwareConfig(
             enabled = case.settings.beatAware,
             phraseAligned = case.settings.phraseAligned,

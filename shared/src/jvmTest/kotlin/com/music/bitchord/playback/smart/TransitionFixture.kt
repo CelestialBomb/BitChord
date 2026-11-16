@@ -46,6 +46,10 @@ data class FixtureSettings(
     val tempoMatching: Boolean = true,
     val albumGapless: Boolean = false,
     val fallbackFadeSeconds: Double = 8.0,
+    /** `MixStyle` key: smooth, fade, rise, quick. Omitted means smooth. */
+    val mixStyle: String = "smooth",
+    /** `BlendLength` key: short, medium, long. Omitted means medium. */
+    val blendLength: String = "medium",
 )
 
 @Serializable
