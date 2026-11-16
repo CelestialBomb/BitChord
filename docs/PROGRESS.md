@@ -16,7 +16,7 @@ App unit tests (`testDevDebugUnitTest`, locale test skipped as in CI): 1242,
 |---|---|---|
 | 1 | Transitions loop: play "Dream, Ivory" (Dream, Ivory), Play next "I Can't Say Goodbye (Unmuffled)" (iOS, not a video), go back to "Dream, Ivory" and let it end: the last ~10 s repeat until the song's time runs out. | **Fixed, confirmed on device** 16 Nov (no loop; log below). The loop mix itself still fails for this pair (see "Loop mix fails near the song end"). |
 | 2 | Play next / Add to queue never gets a DJ mix. | **Audio fixed, confirmed on device** 16 Nov. Remaining: the mix window doesn't show on the progress bar after Play next (2b below). |
-| 2b | After Play next, no mix section on the progress bar / overview. | Cause found (not a missing refresh). **Fix needs a UI decision**, see below. |
+| 2b | After Play next, no mix section on the progress bar / overview. | **Fix committed** `0ed30bb0` (user chose: provisional window + overview text); **awaiting device test**. |
 | 3 | Gapless within albums doesn't fire on Juelz's DRAMATICA: no album ID is passed, and the title+artist check is too strict. | **Fix committed** `d604cb28`, unit-tested; **awaiting device test**. |
 | 4 | Automix overview (mix popup) sometimes shows visual glitches; works most of the time. | **Low priority.** Waiting for a screenshot from the user. |
 
@@ -74,9 +74,20 @@ played before needs its opening downloaded and analysed, ~28 s here, so a late
 Play next shows no window. A song analysed earlier showed its marker 1.4 s after
 Play next (Dream, Ivory -> i cant say goodbye, 16:35:02).
 
-Options (user to choose): a provisional, dimmed window while the new song is
-analysed (it can move once analysis lands); or keep the gate and show
-"analysing next song" in the overview instead.
+Decision (user, 16 Nov): both a provisional window and overview text.
+Implemented in `0ed30bb0`, Beat-aware only (off: unchanged):
+- `TransitionWindow.provisional`: set when the plan is only waiting on analysis
+  or the next song's audio (not when blocked or without a marker).
+- `ThinSlider` draws a provisional window at 40 % strength and fades it to full
+  once measured; `PlayerScrubber` passes the flag (before `centerLabel`, which
+  callers give as a trailing lambda).
+- Automix line: "Automix · analysing the next song · provisional mix in N s"
+  (or "analysing this song", "analysing both songs", "couldn't analyse …",
+  "waiting for the next song's audio").
+- Log: `marker … provisional: next is WAITING` under `BitChordTransitions`.
+
+Known limit: when an analysis has failed for good, the window stays dimmed
+(it will not move, but it is still the fallback plan).
 
 ### Loop mix fails near the song end (new, from the bug 1 log)
 
@@ -134,9 +145,11 @@ verdict), `loop` verdicts, `gate` (a pair held back by the failure record),
 
 ## Next
 
-1. Bug 3 device test: DRAMATICA tracks 1 -> 2 -> 3 should be gapless
-   (`same-album-gapless` in the log).
-2. Bug 2b: implement the option the user picks.
+1. Device test (dev build installed 16 Nov 16:53): DRAMATICA tracks 1 -> 2 -> 3
+   gapless (`same-album-gapless`); Play next on a never-played song shows a dimmed
+   window at once that brightens (and may move) when analysis lands.
+2. PC port of the album match and R3 change; then drop `androidOnly` on 012-013
+   and update the design doc in both forks.
 3. Loop mix failing near the song end (above).
 4. Mix popup glitches, when a screenshot arrives (low priority).
 5. Update the design doc (section 4: failure record and queue hook; section 9)
