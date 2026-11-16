@@ -1143,6 +1143,11 @@ class PlaybackService : MediaLibraryService() {
             // stage switches to that track on its own at the boundary.
             activeLoudness().nextMediaId = nextMediaIdOf(exoPlayer)
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                // Play next, Add to queue, a removal or a drag can change the
+                // song after this one: the crossfade drops plans made for the
+                // old pair and asks for the new song's analysis now, rather
+                // than finding out from its next 250 ms tick.
+                crossfade?.onQueueChanged()
                 speakers.onLocalQueueChanged()
                 saveQueueSnapshot(exoPlayer)
                 refreshCustomLayouts()
@@ -8450,6 +8455,10 @@ class PlaybackService : MediaLibraryService() {
         override fun seekToPrevious() {
             if (locked()) return
             onUserIntent()
+            // The app's own previous button lands here. Like every other skip
+            // it ends a blend in flight, and it gives the song a fresh attempt
+            // at its transition (see [CrossfadeController.onPreviousRequested]).
+            crossfade.onPreviousRequested()
             if (cast.active) {
                 castPrevious()
                 return
@@ -8592,7 +8601,7 @@ class PlaybackService : MediaLibraryService() {
         override fun seekToPreviousMediaItem() {
             if (locked()) return
             onUserIntent()
-            crossfade.onSkipRequested()
+            crossfade.onPreviousRequested()
             if (cast.active) {
                 castPrevious()
                 return
