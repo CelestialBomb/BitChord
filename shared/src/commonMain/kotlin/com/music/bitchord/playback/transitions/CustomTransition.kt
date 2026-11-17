@@ -107,6 +107,25 @@ data class CustomTransitionSnapshot(
 fun customTransitionKey(playlistId: String, outgoingId: String, incomingId: String) =
     "$playlistId|$outgoingId->$incomingId"
 
+/**
+ * The saved pairs of [playlistKey] whose two songs are both in [orderedIds] (the playlist as the
+ * page lists it) but no longer follow one another in that order, so the page has no line for them
+ * and nothing ever plays them. A pair with a song that is not in [orderedIds] is left alone: the
+ * list may be only partly loaded, or the song may come back.
+ */
+fun orphanedPairKeys(snapshot: CustomTransitionSnapshot, playlistKey: String, orderedIds: List<String>): List<String> {
+    val present = orderedIds.toSet()
+    val adjacent = orderedIds.zipWithNext().toSet()
+    val prefix = "$playlistKey|"
+    return snapshot.transitions.keys.filter { key ->
+        if (!key.startsWith(prefix)) return@filter false
+        val ids = key.removePrefix(prefix).split("->")
+        if (ids.size != 2) return@filter false
+        val (out, into) = ids
+        out in present && into in present && (out to into) !in adjacent
+    }
+}
+
 /** A custom blend may use this much of each song: the last and the first 45 s. */
 const val CUSTOM_WINDOW_SECONDS = 45.0
 

@@ -343,4 +343,40 @@ class CustomTransitionTest {
         assertEquals(false, custom(mode = CustomTransition.MODE_NO_MIX).copy(loop = true).isLoopMix)
         assertEquals("custom-gapless", apply(custom(mode = CustomTransition.MODE_GAPLESS).copy(loop = true), now = 199.7).reason)
     }
+
+    // ---- Saved pairs the page no longer has a line for ----------------------------------------
+
+    private fun snapshot(vararg keys: String) =
+        CustomTransitionSnapshot(transitions = keys.associateWith { CustomTransition() })
+
+    @Test
+    fun aPairInTheOppositeOrderIsAnOrphan() {
+        val saved = snapshot(customTransitionKey("PLx", "a", "b"), customTransitionKey("PLx", "b", "a"))
+        assertEquals(listOf(customTransitionKey("PLx", "b", "a")), orphanedPairKeys(saved, "PLx", listOf("a", "b")))
+    }
+
+    @Test
+    fun aPairThatIsStillNextToEachOtherIsKeptAndSoIsOneWithASongNotOnThePage() {
+        val saved = snapshot(
+            customTransitionKey("PLx", "a", "b"),
+            customTransitionKey("PLx", "b", "gone"),
+            customTransitionKey("PLx", "far", "away"),
+        )
+        assertEquals(emptyList(), orphanedPairKeys(saved, "PLx", listOf("a", "b", "c")))
+    }
+
+    @Test
+    fun aReorderedPlaylistOrphansWhatIsNoLongerAdjacent() {
+        val saved = snapshot(customTransitionKey("PLx", "a", "b"), customTransitionKey("PLx", "b", "c"))
+        assertEquals(listOf(customTransitionKey("PLx", "b", "c")), orphanedPairKeys(saved, "PLx", listOf("a", "b", "x", "c")))
+    }
+
+    @Test
+    fun otherPlaylistsAreNeverTouchedAndIdsWithDashesParse() {
+        val saved = snapshot(customTransitionKey("PLy", "b", "a"), customTransitionKey("PLx", "Dbdqj5-FfPk", "yXhiTI79tA0"))
+        assertEquals(
+            listOf(customTransitionKey("PLx", "Dbdqj5-FfPk", "yXhiTI79tA0")),
+            orphanedPairKeys(saved, "PLx", listOf("yXhiTI79tA0", "Dbdqj5-FfPk")),
+        )
+    }
 }

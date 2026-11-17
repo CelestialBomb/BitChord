@@ -19,9 +19,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import android.util.Log
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -35,6 +37,7 @@ import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.playback.smart.AnalysisBridge
 import com.music.bitchord.playback.transitions.CustomTransition
 import com.music.bitchord.playback.transitions.MixStyle
+import com.music.bitchord.playback.transitions.orphanedPairKeys
 import com.music.bitchord.ui.theme.ArtworkPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -84,6 +87,9 @@ class PlaylistMixState(
     val analysing: Boolean,
     val message: String?,
     val onAnalyse: () -> Unit,
+    /** Saved pairs whose songs are on this page but no longer follow one another, and the way to drop them. */
+    val orphans: Int = 0,
+    val onRemoveOrphans: () -> Unit = {},
 )
 
 @Composable
@@ -114,6 +120,20 @@ fun rememberPlaylistMix(
         if (found.isNotEmpty()) traits = traits + found
     }
 
+    // What the page reads, once per page and change: the playlist id it keys on and how many saved pairs it can show.
+    LaunchedEffect(page.browseId, songs.size, snapshot) {
+        if (enabled && songs.isNotEmpty()) {
+            val shown = songs.zipWithNext().count { (a, b) -> CustomTransitionStore.get(page.browseId, a.videoId, b.videoId) != null }
+            val key = CustomTransitionStore.playlistKey(page.browseId)
+            val saved = snapshot.transitions.keys.count { it.startsWith("$key|") }
+            Log.d("BitChordMix", "page ${page.browseId} -> key $key: ${songs.size} songs, $saved saved pairs, $shown shown")
+        }
+    }
+
+    val orphanKeys = remember(snapshot, songs, page.browseId) {
+        if (enabled) orphanedPairKeys(snapshot, CustomTransitionStore.playlistKey(page.browseId), songs.map { it.videoId }) else emptyList()
+    }
+
     var analysing by remember(page.browseId) { mutableStateOf(false) }
     var message by remember(page.browseId) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -128,6 +148,8 @@ fun rememberPlaylistMix(
             TransitionSummary.of(CustomTransitionStore.get(page.browseId, out.videoId, into.videoId))
         },
         onOpenTransition = onOpenTransition,
+        orphans = orphanKeys.size,
+        onRemoveOrphans = { CustomTransitionStore.removeKeys(orphanKeys) },
         analysing = analysing,
         message = message,
         onAnalyse = {
@@ -183,6 +205,19 @@ fun MixHeaderRow(mix: PlaylistMixState, palette: ArtworkPalette, modifier: Modif
                     color = palette.onBackgroundVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+            }
+            if (mix.orphans > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        pluralStringResource(R.plurals.mix_orphans, mix.orphans, mix.orphans),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.onBackgroundVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = mix.onRemoveOrphans) {
+                        Text(stringResource(R.string.mix_orphans_remove), color = palette.accent)
+                    }
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = mix.onAnalyse, enabled = !mix.analysing, contentPadding = PaddingValues(0.dp)) {

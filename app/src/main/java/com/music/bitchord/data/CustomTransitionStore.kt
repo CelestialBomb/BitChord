@@ -121,6 +121,12 @@ object CustomTransitionStore {
         onPairEdited?.invoke(outgoingId, incomingId)
     }
 
+    /** Drops saved pairs by their [customTransitionKey]s, for the ones no playlist page can show any more. */
+    fun removeKeys(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        update { current -> current.copy(transitions = current.transitions - keys.toSet()) }
+    }
+
     /** Replaces everything, as a backup restore does: replace, never merge. */
     fun replaceAll(snapshot: CustomTransitionSnapshot) = update { snapshot }
 

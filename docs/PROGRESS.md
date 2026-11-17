@@ -279,6 +279,46 @@ Implemented in `0ed30bb0`, Beat-aware only (off: unchanged):
 Known limit: when an analysis has failed for good, the window stays dimmed
 (it will not move, but it is still the fallback plan).
 
+### Saved pairs, keys and the loop mix on the phone (17 Nov, later)
+
+Two pairs were left in the store after "Use automatic" on every Elevator Music row:
+- `LM|B5Y6fyMHOOU->w4SNwmWQ7us` (Liked Music, Rise 16 bars): a valid pair. Liked Music's page id
+  `VLLM` normalises to `LM`, the two songs are adjacent on that page, and with Mix switched on
+  the page shows it. It was invisible only because Mix is OFF on Liked Music (the page shows no
+  transition lines then, and playback ignores them). Left in place.
+- `PLBCzXsQIQGxo|yXhiTI79tA0->Dbdqj5-FfPk` (HardTekk Music, 2 songs): an orphan by order, not by id.
+  The page (`VLPLBCzXsQIQGxo` -> `PLBCzXsQIQGxo`, correct) lists and plays Dbdqj5-FfPk first; the
+  pair was saved for the opposite order, so no line on the page ever matched it. Removed.
+Page, editor, "Use automatic" and playback all key through `CustomTransitionStore.playlistKey`
+on the same playlist id; no mismatch in the key itself. Added: a notice under the Mix switch,
+"N saved transitions no longer match this playlist's order" with Remove, for pairs whose two
+songs are both on the page but not adjacent (`orphanedPairKeys`, tested). Pairs with a song
+missing from the page are left alone (a long playlist may be only partly loaded).
+
+"This output can't take it": not the earbuds. The value `precision=false ch=0 rate=0` is the
+port's never-configured default: the sink has not played yet (paused, a queue just restored, or
+players rebuilt after an output change; the service reconfigures on every audio device added or
+removed, earbuds included). Earbuds active 16 Nov 16:34-19:29 and 17 Nov 10:08-11:28; refusals
+at 17 Nov 01:29-01:39, 12:47-12:49 and 13:41 had no earbuds connected, and loop mixes ran on 16
+Nov (16:28, 16:35) while they were. The controller now says "waiting on the audio output" for an
+unconfigured sink and keeps "can't take it" for a configured but unsuitable one.
+
+Found while checking the custom loop on the phone:
+- Preview's seek could be lost: when the pair's first song was already the current item, the seek
+  ran on the old queue and the new two-song queue replaced it (Preview then played from 4 s).
+  Fixed: it waits for the new queue.
+- A stream quality upgrade mid-playback changed the duration by a few ms, which changed the custom
+  loop's cache key and re-planned it from the later playhead, losing the loop. The key now uses
+  the saved choices only.
+- A custom loop saved on Hot Milk -> Flowers (4 bars, ramp locked: 24 BPM apart) ran from start to
+  finish in normal playback (loop 201.6 s, handoff 27.66 s). In Preview it once failed with "a sink
+  was flushed" 20 s into the mix (24 s of file left, so not the end-of-song case; cause not found)
+  and once with "the decks would not build" 3 ms after starting, after a stream upgrade (a
+  region decode returned nothing, probably audio not yet in the cache). Both fell back to a plain
+  crossfade as designed. Not fixed.
+- The editor warns when the saved start is too late for the tempos and locks the ramp when the
+  songs are more than 8 BPM apart; the loop switch is on when both songs have played through.
+
 ### Custom loop mix in the editor (17 Nov): built, tests pass, phone check pending
 
 Answer to "can a custom transition use the loop mix": it could not (the controller skipped
