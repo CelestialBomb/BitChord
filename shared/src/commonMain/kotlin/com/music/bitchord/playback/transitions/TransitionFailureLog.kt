@@ -38,6 +38,11 @@ class TransitionFailureLog {
     fun failureCount(outgoingId: String, incomingId: String): Int =
         failures[key(outgoingId, incomingId)]?.count ?: 0
 
+    /** Forgets the failures of exactly this pair, e.g. because the listener just changed its transition. */
+    fun clearPair(outgoingId: String, incomingId: String) {
+        failures.remove(key(outgoingId, incomingId))
+    }
+
     /** Forgets every failure that involves [mediaId] on either side. */
     fun clearFor(mediaId: String) {
         failures.values.removeAll { it.from == mediaId || it.to == mediaId }

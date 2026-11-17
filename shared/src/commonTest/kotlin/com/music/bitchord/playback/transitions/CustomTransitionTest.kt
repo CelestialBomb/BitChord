@@ -262,4 +262,19 @@ class CustomTransitionTest {
         assertTrue(customTransitionKey("PL", "a", "b") != customTransitionKey("PL", "b", "a"))
         assertTrue(customTransitionKey("PL1", "a", "b") != customTransitionKey("PL2", "a", "b"))
     }
+
+    @Test
+    fun onlyGaplessAndNoMixAreModeOnly() {
+        assertEquals(true, custom(mode = CustomTransition.MODE_GAPLESS).isModeOnly)
+        assertEquals(true, custom(mode = CustomTransition.MODE_NO_MIX).isModeOnly)
+        assertEquals(false, custom(mode = CustomTransition.MODE_MIX).isModeOnly)
+    }
+
+    @Test
+    fun durationsMatchWithinTwoSeconds() {
+        val saved = custom(outMs = 200_000, inMs = 180_000)
+        assertTrue(saved.matchesDurations(201.9, 178.2))
+        assertTrue(!saved.matchesDurations(202.1, 180.0), "outgoing too different")
+        assertTrue(!saved.matchesDurations(200.0, 177.9), "incoming too different")
+    }
 }

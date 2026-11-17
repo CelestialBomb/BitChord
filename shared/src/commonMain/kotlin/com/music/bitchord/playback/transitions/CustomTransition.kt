@@ -43,6 +43,14 @@ data class CustomTransition(
 ) {
     val mixStyle: MixStyle get() = MixStyle.fromKey(style)
 
+    /** Gapless and No mix: they never mix, so no failure of a blend can be held against them. */
+    val isModeOnly: Boolean get() = mode == MODE_GAPLESS || mode == MODE_NO_MIX
+
+    /** Whether the two songs are still the lengths this was made against (see [CUSTOM_DURATION_TOLERANCE_MS]). */
+    fun matchesDurations(outDurationSeconds: Double, inDurationSeconds: Double): Boolean =
+        abs(outDurationSeconds * 1000 - outDurationMs) <= CUSTOM_DURATION_TOLERANCE_MS &&
+            abs(inDurationSeconds * 1000 - inDurationMs) <= CUSTOM_DURATION_TOLERANCE_MS
+
     val exitFilter: ExitFilter
         get() = when (filter) {
             FILTER_LOW_PASS -> ExitFilter.LOW_PASS
@@ -112,9 +120,7 @@ fun applyCustomTransition(
 ): TransitionPlan {
     fun fallback(code: String) = planner.copy(policyReasons = planner.policyReasons + code)
 
-    if (abs(durationSeconds * 1000 - custom.outDurationMs) > CUSTOM_DURATION_TOLERANCE_MS ||
-        abs(nextDurationSeconds * 1000 - custom.inDurationMs) > CUSTOM_DURATION_TOLERANCE_MS
-    ) {
+    if (!custom.matchesDurations(durationSeconds, nextDurationSeconds)) {
         return fallback("custom-fallback-duration")
     }
 

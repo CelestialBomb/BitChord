@@ -69,4 +69,21 @@ class CustomTransitionStoreTest {
         CustomTransitionStore.setPreview("PL", "a", "b", draft)
         assertEquals(CustomTransitionSnapshot(), CustomTransitionStore.snapshot.value)
     }
+
+    @Test
+    fun savingResettingAndPreviewingTellTheControllerWhichPair() {
+        val told = mutableListOf<Pair<String, String>>()
+        CustomTransitionStore.onPairEdited = { out, into -> told += out to into }
+        try {
+            CustomTransitionStore.save("PL", "a", "b", saved)
+            CustomTransitionStore.setPreview("PL", "b", "c", draft)
+            CustomTransitionStore.reset("PL", "a", "b")
+            CustomTransitionStore.setMix("PL", true)
+            CustomTransitionStore.consumePreview("PL", "b", "c")
+            CustomTransitionStore.replaceAll(CustomTransitionSnapshot())
+            assertEquals(listOf("a" to "b", "b" to "c", "a" to "b"), told)
+        } finally {
+            CustomTransitionStore.onPairEdited = null
+        }
+    }
 }

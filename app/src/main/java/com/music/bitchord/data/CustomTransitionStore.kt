@@ -55,11 +55,23 @@ object CustomTransitionStore {
     fun get(playlistId: String, outgoingId: String, incomingId: String): CustomTransition? =
         _snapshot.value.transitions[customTransitionKey(playlistId, outgoingId, incomingId)]
 
-    fun save(playlistId: String, outgoingId: String, incomingId: String, transition: CustomTransition) = update { current ->
-        current.copy(
-            transitions = current.transitions + (customTransitionKey(playlistId, outgoingId, incomingId) to transition),
-        )
+    fun save(playlistId: String, outgoingId: String, incomingId: String, transition: CustomTransition) {
+        update { current ->
+            current.copy(
+                transitions = current.transitions + (customTransitionKey(playlistId, outgoingId, incomingId) to transition),
+            )
+        }
+        onPairEdited?.invoke(outgoingId, incomingId)
     }
+
+    /**
+     * Told when the listener saves, resets or previews a pair, with its two song
+     * ids. The crossfade controller uses it to forget that pair's failed blends,
+     * so a transition just made applies at once instead of waiting behind a
+     * failure the old one caused. Set from the main thread, called on it.
+     */
+    @Volatile
+    var onPairEdited: ((outgoingId: String, incomingId: String) -> Unit)? = null
 
     /**
      * What the controller plays for this pair: the editor's unsaved preview if it
@@ -81,6 +93,7 @@ object CustomTransitionStore {
     /** Preview in the editor: [transition] stands in for this pair until it is used or [clearPreview] runs. Memory only. */
     fun setPreview(playlistId: String, outgoingId: String, incomingId: String, transition: CustomTransition) {
         preview = Preview(customTransitionKey(playlistId, outgoingId, incomingId), transition)
+        onPairEdited?.invoke(outgoingId, incomingId)
     }
 
     fun clearPreview() {
@@ -93,8 +106,11 @@ object CustomTransitionStore {
     }
 
     /** Back to the automatic plan for this pair. */
-    fun reset(playlistId: String, outgoingId: String, incomingId: String) = update { current ->
-        current.copy(transitions = current.transitions - customTransitionKey(playlistId, outgoingId, incomingId))
+    fun reset(playlistId: String, outgoingId: String, incomingId: String) {
+        update { current ->
+            current.copy(transitions = current.transitions - customTransitionKey(playlistId, outgoingId, incomingId))
+        }
+        onPairEdited?.invoke(outgoingId, incomingId)
     }
 
     /** Replaces everything, as a backup restore does: replace, never merge. */

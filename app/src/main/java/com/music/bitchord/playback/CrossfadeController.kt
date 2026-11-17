@@ -796,6 +796,12 @@ class CrossfadeController(
 
     fun start() {
         listenTo(active())
+        // A transition the listener has just saved, reset or previewed starts from a
+        // clean slate: whatever failed under the old one is not held against it.
+        CustomTransitionStore.onPairEdited = { outgoingId, incomingId ->
+            failures.clearPair(outgoingId, incomingId)
+            Log.d(TRANSITION_TAG, "custom transition edited for $outgoingId->$incomingId: failure record cleared")
+        }
         tickerJob?.cancel()
         tickerJob = scope.launch {
             while (isActive) {
@@ -816,6 +822,7 @@ class CrossfadeController(
     }
 
     fun release() {
+        CustomTransitionStore.onPairEdited = null
         tickerJob?.cancel()
         tickerJob = null
         loopBuildJob?.cancel()
@@ -1457,7 +1464,13 @@ class CrossfadeController(
         // A pair whose blend already failed is never retried as it was: once
         // it gets a plain crossfade, twice it gets nothing. Without this the
         // 250 ms re-planning re-armed the same failing mix at the same point.
-        val gate = failureVerdict(player)
+        //
+        // Except for a custom Gapless or No mix that applies to this pair: neither
+        // mixes anything, so no failed blend can be held against them.
+        val saved = customFor(currentItem, nextItem)
+        val modeOnly = saved != null && saved.isModeOnly &&
+            saved.matchesDurations(duration / 1000.0, nextDuration / 1000.0)
+        val gate = if (modeOnly) TransitionFailureLog.Verdict.NORMAL else failureVerdict(player)
         if (gate == TransitionFailureLog.Verdict.NONE) {
             AppSettings.smartTransitionWindow.value = null
             plannedTransition = null
@@ -1516,7 +1529,7 @@ class CrossfadeController(
         // already failed). It replaces the global style and length for the pair.
         // Where it no longer fits, [applyCustomTransition] hands the planner's
         // own plan back with a fallback code.
-        val custom = if (plainOnly) null else customFor(currentItem, nextItem)
+        val custom = if (plainOnly) null else saved
         // The listener's style and length, over the planner's choice. Only a
         // mix the planner chose is restyled; every fallback stays as planned.
         val mixStyle = AppSettings.automixStyle.value

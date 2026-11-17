@@ -45,6 +45,13 @@ custom plan. The exit filter merges into `tracks.outgoing` (lowest low-pass, hig
 so it adds to the style's own move. **Limit:** custom transitions run inside Automix, so they
 need Automix on; the editor should say so.
 
+Failure record and custom transitions (user request, 17 Nov): saving, resetting or
+previewing a pair clears that pair's failure record (`CustomTransitionStore.onPairEdited` ->
+`TransitionFailureLog.clearPair`), so the new transition applies at once, Preview included.
+A custom Gapless or No mix that applies to the pair (durations still match) is never held
+back by the record; a stale-duration one falls back to the automatic plan, which stays
+protected by it. Restoring a backup does not clear failures.
+
 Step 1 notes: reason codes `before-custom` / `custom`, `custom-gapless`,
 `custom-no-mix`; fallbacks are policy reasons on the planner's own plan
 (`custom-fallback-duration`, `-window`, `-late`). `TransitionPlan` gained

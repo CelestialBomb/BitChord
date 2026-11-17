@@ -47,6 +47,19 @@ class TransitionFailureLogTest {
     }
 
     @Test
+    fun clearingAPairForgetsOnlyThatPair() {
+        log.recordFailure("a", "b")
+        log.recordFailure("a", "b")
+        log.recordFailure("b", "a")
+        log.recordFailure("a", "c")
+        log.clearPair("a", "b")
+        assertEquals(TransitionFailureLog.Verdict.NORMAL, log.verdict("a", "b"))
+        assertEquals(TransitionFailureLog.Verdict.PLAIN_CROSSFADE, log.verdict("b", "a"))
+        assertEquals(TransitionFailureLog.Verdict.PLAIN_CROSSFADE, log.verdict("a", "c"))
+        log.clearPair("x", "y") // never failed: nothing to do
+    }
+
+    @Test
     fun idsContainingTheSeparatorAreHandled() {
         val out = "https://host/a->b?x=1"
         log.recordFailure(out, "c")
