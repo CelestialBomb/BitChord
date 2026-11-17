@@ -80,6 +80,13 @@ class LoopMixPort {
 
     val supportsLoopMix: Boolean get() = precision && channelCount == 2 && sampleRate > 0
 
+    /**
+     * How far ahead of what is heard the sink is writing, µs: processed audio minus the presented
+     * position, refreshed on every position reading, 0 while nothing plays. The outgoing player's
+     * song ends this much before its audible end, which is what the loop mix's handover must beat.
+     */
+    @Volatile var sinkLeadUs: Long = 0L
+
     /** The renderer timebase's offset: track µs = presentation µs - this. */
     @Volatile var streamOffsetUs: Long = 0L
 

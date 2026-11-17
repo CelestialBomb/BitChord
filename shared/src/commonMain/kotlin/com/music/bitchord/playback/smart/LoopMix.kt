@@ -102,14 +102,11 @@ object LoopMix {
     const val OUT_SEARCH_SEC = 60.0
     const val IN_SEARCH_SEC = 45.0
 
-    /**
-     * The outgoing song's own file must outlast the handover by this much. Under
-     * the renderer the outgoing player keeps reading its file at 1x until the
-     * handover, and its sink runs about 3.7 s ahead of what is heard: when the
-     * file ends first the sink is flushed and the mix dies (device log, 16 Nov:
-     * a 188 s song, loop at 164 s, handover due at about 187.5 s, flush at 184.6 s).
-     */
-    const val OUT_END_GUARD_SEC = 6.0
+    // There is deliberately no rule that the handover must land before the outgoing file ends. The
+    // controller holds the outgoing player's end (pauseAtEndOfMediaItems) for the whole mix, and the
+    // sink goes on generating the mix past the last sample: on the phone Flamingo -> i don't belong here
+    // handed over 2.6 s after Flamingo's end and finished cleanly (17 Nov, sink lead 0.4-0.6 s). A guard
+    // of that kind, added on a wrong reading of the 16 Nov flush, threw such loops away.
 
     /** Element <-> deck handovers: identical audio crossed this quickly is heard as one. */
     const val HANDOVER_SEC = 0.025
@@ -221,9 +218,7 @@ object LoopMix {
             lengths = lengths,
         )
 
-        // outgoing: the latest instrumental loop whose handover still lands inside the
-        // song's own file (see [OUT_END_GUARD_SEC]). With no incoming loop there is no
-        // handover to check, and the plan fails on that side anyway.
+        // outgoing: the latest instrumental loop that ends before the song does
         val outEnd = outDuration - 0.5
         val outFirst = max(earliestOutSec, outDuration - OUT_SEARCH_SEC)
         val hold = custom?.holdTempo == true
@@ -244,10 +239,6 @@ object LoopMix {
             beatSec = outGrid.beatSec,
             count = outCount,
             lengths = lengths,
-            accept = { clean ->
-                inPick == null ||
-                    clean.start + Clock(assemble(clean, inPick, hold)).handoffAt <= outDuration - OUT_END_GUARD_SEC
-            },
         ) ?: return null.also { why?.append("outgoing: ")?.append(outCount) }
         if (inPick == null) return null.also { why?.append("incoming: ")?.append(inCount) }
         return assemble(outPick, inPick, hold)
@@ -410,13 +401,11 @@ object LoopMix {
         var lyrics = 0
         var unmasked = 0
         var sung = 0
-        var late = 0
 
         override fun toString() = if (loops == 0) {
             "no bar lines in the search"
         } else {
-            "$loops loops: $quiet quiet, $lyrics sung (lyrics), $sung sung (mask), $unmasked unmeasured" +
-                (if (late > 0) ", $late too late (the mix would outlast the song)" else "")
+            "$loops loops: $quiet quiet, $lyrics sung (lyrics), $sung sung (mask), $unmasked unmeasured"
         }
     }
 
@@ -426,8 +415,6 @@ object LoopMix {
         sung: List<Span>?,
         beatSec: Double,
         count: Rejections,
-        /** A loop that is clean may still be turned down for where it sits; counted as [Rejections.late]. */
-        accept: (Clean) -> Boolean = { true },
         lengths: IntArray = LOOP_LENGTHS,
     ): Clean? {
         for (bars in lengths) {
@@ -450,12 +437,7 @@ object LoopMix {
                         count.lyrics++
                         continue
                     }
-                    if (touching.isEmpty()) {
-                        val clean = Clean(loop.start, loop.end, bars, 0.0, Check.LYRICS)
-                        if (accept(clean)) return clean
-                        count.late++
-                        continue
-                    }
+                    if (touching.isEmpty()) return Clean(loop.start, loop.end, bars, 0.0, Check.LYRICS)
                     // Only the guessed tails of open lines reach it: the mask decides those.
                     val mask = maskStats(analysis.vocalWindows, loop.start - beatSec, loop.end)
                     if (mask == null) {
@@ -466,10 +448,7 @@ object LoopMix {
                         count.sung++
                         continue
                     }
-                    val clean = Clean(loop.start, loop.end, bars, mask.share, Check.LYRICS_AND_MASK)
-                    if (accept(clean)) return clean
-                    count.late++
-                    continue
+                    return Clean(loop.start, loop.end, bars, mask.share, Check.LYRICS_AND_MASK)
                 }
                 val mask = maskStats(analysis.vocalWindows, loop.start - beatSec, loop.end)
                 if (mask == null) {
@@ -480,10 +459,7 @@ object LoopMix {
                     count.sung++
                     continue
                 }
-                val clean = Clean(loop.start, loop.end, bars, mask.share, Check.MASK)
-                if (accept(clean)) return clean
-                count.late++
-                continue
+                return Clean(loop.start, loop.end, bars, mask.share, Check.MASK)
             }
         }
         return null

@@ -3271,7 +3271,8 @@ class CrossfadeController(
                 "handoff in ${handoffIn?.let { "%.2f".format(Locale.ROOT, it) }}s, " +
                 "mix ends at ${"%.2f".format(Locale.ROOT, session.clock.elementAt)}s, loop at " +
                 "${"%.2f".format(Locale.ROOT, session.plan.out.loopStart)}s, " +
-                "handoff ${"%.2f".format(Locale.ROOT, session.clock.handoffAt)}s after it",
+                "handoff ${"%.2f".format(Locale.ROOT, session.clock.handoffAt)}s after it, " +
+                "sink lead ${session.outPort.sinkLeadUs / 1000}ms",
         )
     }
 

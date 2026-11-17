@@ -316,7 +316,7 @@ Found while checking the custom loop on the phone:
   and once with "the decks would not build" 3 ms after starting, after a stream upgrade (a
   region decode returned nothing, probably audio not yet in the cache). Both fell back to a plain
   crossfade as designed. Not fixed.
-- The editor warns when the saved start is too late for the tempos and locks the ramp when the
+- The editor locks the ramp when the
   songs are more than 8 BPM apart; the loop switch is on when both songs have played through.
 
 ### Custom loop mix in the editor (17 Nov): built, tests pass, phone check pending
@@ -336,51 +336,33 @@ Analyse playlist is unchanged.
 
 Done: `LoopMix.Custom` / `holdTempo` / `estimate`, `CustomTransition.loop*`, controller hook
 (plans the custom loop first, waits for lyrics/analysis, falls back), editor controls with a
-tempo summary and a warning when the start is too late for the tempos, page row label
+tempo summary, page row label
 "Custom . Loop mix . 2 bars", backup round trip. Shared 253+ and app tests pass.
 
 To check on the phone (the phone was locked): the Loop switch is enabled for two songs that
 have played through; Preview of a loop pair logs `plan ... custom=loop/2bars/ramp` and
 `loop mix at ...`; a pair with no clean loop near the start logs `custom=fallback(loop: ...)`.
 
-### Loop mix fails near the song end: cause found and fixed (17 Nov)
+### Loop mix flush near the song end: my first explanation was wrong (corrected 17 Nov, evening)
 
-The cause was the handover landing after the outgoing file's end. Under the
-renderer the outgoing player keeps reading its own file at 1x until the handover
-(`Clock.handoffAt`, mid-ramp); when the file ends first, its sink is flushed and the
-mix dies. Dream, Ivory: 188 s song, loop at 164.0 s, 60 -> 69 BPM, handover about
-23.5 s after the loop = about 187.5 s; the flush came at 184.6 s, one sink lead
-(about 3.7 s) before the end. `LoopMix.plan` only checked that the loop ended 0.5 s
-before the song did.
-
-Confirmed on the phone with the new `loop trace` log lines (takeover, handoff, stop):
-Hot Milk -> Flowers, loop at 201.60 s, handoff 27.64 s later; the outgoing player was at
-229.26 s of 246.58 s when the handoff fired (loop start + handoff, on the real clock).
-
-Fix: `LoopMix.plan` now takes the latest loop whose
-`loopStart + handoffAt <= duration - OUT_END_GUARD_SEC` (6 s: the 3.7 s sink lead plus
-margin), trying earlier loops inside the 60 s search, and refuses the mix with
-"N too late (the mix would outlast the song)" when none fits (the pair then gets the
-planner's blend). Tests: the 188 s / 60 -> 69 BPM case, a property test over durations
-and tempos, a song too short, and a long song that keeps its latest loop.
-No runtime guard is needed: the relation depends only on the plan and 1x speed
-(speed is already a refusal).
-
-Not verified on the phone: the exact failing pair (Dream, Ivory -> I Can't Say Goodbye)
-was not set up again; the working pair was unchanged by the fix in the unit tests.
-
-Observations, not fixed:
-- Loop mix refused with "this output can't take it (precision=false ch=0 rate=0)" for
-  every pair after a run of skips in one session (a fresh start, and a plain blend
-  followed by the next pair, were fine). The sink's loop format reads as unconfigured.
-  The sink code is unchanged from v1.9.1. Worth a look if it shows up for listeners.
-- Lyrics sometimes come back empty for a song; the planner then has only the vocal mask
-  and refuses loops it would otherwise take.
-- The loop mix log reports "incoming -2243 ms against the deck at the handover"
-  (alignment error); the user likes how it sounds, so only noted.
-- A custom pair saved on Elevator Music (Flamingo -> Hot Milk, Rise) had vanished from the
-  store by the next hour; saving and a force-stop afterwards keep a pair, and only the
-  editor's Save and "Use automatic" write pairs. Not explained; watch for it.
+What I wrote earlier today (and in commit 4612185c): the handover lands after the outgoing file's
+end, so the file ends first and the sink is flushed; fixed by requiring the handover to land 6 s
+before the file's end. That was wrong, and the guard it added made things worse:
+- Flamingo -> i don't belong here used to loop-mix and the guard refused it: the log said
+  "1 too late (the mix would outlast the song)". Its only clean loop is at 173.3 s of 197.5 s and
+  hands over at 200.1 s, 2.6 s AFTER the file ends. With the guard off it ran cleanly: handoff
+  fired with the outgoing player at 200148 ms of 197528 ms, done, incoming 0.2 ms off the deck.
+  (The end is held for the whole mix, "end held at 36137ms left".)
+- The measured sink lead on the phone is 0.4-0.6 s, not the 3.7 s I took it to be.
+- The two real flushes line up with each other, not with the file: Dream, Ivory 16 Nov (loop
+  164.03 s, flush at 184.56 s, end held at 36 s left, 3.7 s of file left) = 20.57 s after takeover;
+  the Preview run today (loop 201.60 s, flush at 222.12 s, 24 s of file left) = 20.52 s after
+  takeover. Runs that passed that point (Hot Milk -> Flowers in normal playback, Flamingo ->
+  i don't belong here) did not flush.
+So the guard is removed (commit after this one's parent); the planner takes the latest clean loop
+again. The flush about 20.5 s into some mixes is still open and is the Preview investigation.
+Kept: the `loop trace` lines (takeover, handoff, stop) now also print the sink lead, and
+`LoopMixPort.sinkLeadUs` carries it.
 
 ### Bug 1: what was done
 

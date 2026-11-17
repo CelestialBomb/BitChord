@@ -311,48 +311,8 @@ class LoopMixTest {
 
     // ---- The handover has to land inside the outgoing song's own file ------------------------
 
-    private fun handoverMargin(plan: LoopMix.Plan, duration: Double): Double =
-        duration - (plan.out.loopStart + LoopMix.Clock(plan).handoffAt)
 
-    @Test
-    fun theHandoverOfASlowMixOnAShortSongLandsBeforeItsFileEnds() {
-        // Device log 16 Nov: 188 s song at 60 BPM into 69 BPM. The latest loop (about 171 s) put the handover
-        // at about 194 s, after the file's end, and the outgoing sink was flushed 3.7 s before that end.
-        val plan = assertNotNull(plan(analysis(60.0, 188.0), analysis(69.0, 200.0)))
-        assertTrue(
-            handoverMargin(plan, 188.0) >= LoopMix.OUT_END_GUARD_SEC,
-            "handover ${LoopMix.Clock(plan).handoffAt} s after a loop at ${plan.out.loopStart} s",
-        )
-        assertTrue(plan.out.loopStart < 165, "an earlier loop than the latest one: ${plan.out.loopStart}")
-    }
 
-    @Test
-    fun everyPlanHandsOverBeforeTheOutgoingFileEndsWhateverTheTempoAndLength() {
-        var plans = 0
-        for (duration in listOf(75.0, 120.0, 188.0, 240.0, 400.0)) {
-            for (outBpm in listOf(60.0, 89.0, 124.0, 170.0)) {
-                for (inBpm in listOf(60.0, 75.0, 99.0, 128.0, 180.0)) {
-                    val plan = plan(analysis(outBpm, duration), analysis(inBpm, 200.0)) ?: continue
-                    plans++
-                    assertTrue(
-                        handoverMargin(plan, duration) >= LoopMix.OUT_END_GUARD_SEC,
-                        "$outBpm -> $inBpm BPM on $duration s: loop ${plan.out.loopStart}, " +
-                            "handover ${LoopMix.Clock(plan).handoffAt} s later",
-                    )
-                }
-            }
-        }
-        assertTrue(plans > 20, "most of these pairs can be mixed: $plans")
-    }
-
-    @Test
-    fun aSongTooShortForTheMixGetsNoLoopMixAndSaysWhy() {
-        val why = StringBuilder()
-        val out = analysis(120.0, 15.0)
-        val inn = analysis(120.0, 200.0)
-        assertNull(LoopMix.plan(out, out.duration, inn, inn.duration, 0.0, clear, clear, why = why))
-        assertTrue("too late" in why, why.toString())
-    }
 
     @Test
     fun aLongSongKeepsItsLatestLoopWhenTheHandoverFitsAsBefore() {
@@ -401,13 +361,6 @@ class LoopMixTest {
         assertTrue("outgoing" in why, why.toString())
     }
 
-    @Test
-    fun aCustomLoopThatCannotHandOverInsideTheSongIsTurnedDown() {
-        val why = StringBuilder()
-        // 188 s at 60 BPM into 69: the loop the listener put at 180 s would hand over after the file's end
-        assertNull(customPlan(analysis(60.0, 188.0), analysis(69.0, 200.0), LoopMix.Custom(1, 180.0), why))
-        assertTrue("too late" in why, why.toString())
-    }
 
     @Test
     fun holdingTheTempoKeepsTheOutgoingTempoUntilTheIncomingLoopLetsGo() {
@@ -430,13 +383,6 @@ class LoopMixTest {
         assertEquals(false, assertNotNull(plan(analysis(120.0, 200.0), analysis(124.0, 180.0))).holdTempo)
     }
 
-    @Test
-    fun aCustomPlanStillHandsOverBeforeTheFileEnds() {
-        for (around in listOf(100.0, 140.0, 170.0, 185.0)) {
-            val plan = customPlan(analysis(89.0, 200.0), analysis(75.0, 180.0), LoopMix.Custom(2, around)) ?: continue
-            assertTrue(handoverMargin(plan, 200.0) >= LoopMix.OUT_END_GUARD_SEC, "around $around")
-        }
-    }
 
     @Test
     fun theEstimateAgreesWithThePlanItStandsInFor() {
@@ -458,5 +404,27 @@ class LoopMixTest {
         assertEquals(0.0, doubled.gapBpm, 1e-9)
         assertNull(LoopMix.estimate(0.0, 120.0, 4, holdTempo = false))
         assertNull(LoopMix.estimate(120.0, Double.NaN, 4, holdTempo = false))
+    }
+
+    // ---- The handover may land after the outgoing file's own end -----------------------------------
+
+    @Test
+    fun aSlowMixTakesTheLatestLoopEvenWhenItsHandoverFallsAfterTheFilesEnd() {
+        // Flamingo -> i don't belong here on the phone (17 Nov): the only clean loop at 173.3 s of 197.5 s,
+        // 89 -> 120 BPM, handed over 2.6 s after the file's end and played through cleanly. The outgoing
+        // end is held, so nothing in the plan may refuse it for that.
+        val out = analysis(89.0, 197.5)
+        val inn = analysis(120.0, 200.0)
+        val plan = assertNotNull(plan(out, inn))
+        assertTrue(plan.out.loopEnd <= 197.0, "the loop itself ends inside the song: ${plan.out.loopEnd}")
+        val handover = plan.out.loopStart + LoopMix.Clock(plan).handoffAt
+        assertTrue(handover > 197.5, "the handover lands after the file ends here: $handover")
+    }
+
+    @Test
+    fun aVerySlowMixOnAShortSongIsStillPlanned() {
+        // 60 -> 69 BPM on 188 s (the 16 Nov Dream, Ivory pair): its flush came 20.5 s into the mix, with the
+        // end held, and is not explained by the file's end; the plan must not hide behind it.
+        assertNotNull(plan(analysis(60.0, 188.0), analysis(69.0, 200.0)))
     }
 }

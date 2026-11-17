@@ -275,9 +275,6 @@ fun CustomTransitionEditor(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (start + loopEstimate.handoverSeconds + LoopMix.OUT_END_GUARD_SEC > duration) {
-                            Text(stringResource(R.string.editor_loop_tight), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                        }
                     }
                 }
 

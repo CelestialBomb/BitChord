@@ -502,6 +502,7 @@ class PrecisionAudioSink(
         val processed = processedEndUs
         if (processed != C.TIME_UNSET) {
             dspChain.transition.leadUs = (processed - position).coerceAtLeast(0L)
+            loop.sinkLeadUs = dspChain.transition.leadUs
         }
         val port = loop
         if (port.outArm != null || port.inArm != null) {
