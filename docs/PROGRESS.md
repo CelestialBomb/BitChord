@@ -3,12 +3,49 @@
 Newest first. Update after every step and commit with it. See `CLAUDE.md` /
 `.clinerules` for the working rules and `docs/transitions-design.md` for the spec.
 
-## Current state (16 Nov 2026)
+## Current state (16 Nov 2026, evening)
 
-Branch `transitions`. Spec v0.3. Shared JVM tests: 145 in 21 suites, all pass.
-App unit tests (`testDevDebugUnitTest`, locale test skipped as in CI): 1242,
-0 failures, 1 skipped. Dev APK builds and is installed on the test phone
-(`com.dev.bitchord`, arm64).
+Branch `transitions`. Spec v0.4 (identical in the PC repo). Shared JVM tests:
+172 in 23 suites, all pass. App unit tests (`testDevDebugUnitTest`, locale test
+skipped as in CI): 1242, 0 failures, 1 skipped. PC `cargo test transitions`: 7
+pass, fixtures 012-018 skipped there as `androidOnly`. Dev APK with Mix on skip
+installed on the test phone at 22:45 (`com.dev.bitchord`, arm64).
+
+**Before any upstream PR:** the new strings (Mix style, Blend length, Mix on skip
+and their options) are English only. Add translations for the 20 locales that
+have the Beat-aware strings.
+
+## Stage 1 customisation and Mix on skip (16 Nov, spec 0.4)
+
+Approved plan, user decisions: queue taps don't blend (next, swipe, headset,
+Auto do); style and length apply whenever Automix is on; English strings only
+for now; the design doc is committed and pushed in the PC repo too.
+
+| Commit | What |
+|---|---|
+| `df01df19` | Shared `MixStyle`, `BlendLength`, `applyMixStyle`; 13 tests; fixtures 014-018 |
+| `7a87f8eb` | Settings `automix_style`, `automix_blend_length` under Automix; controller restyles each plan |
+| `53b5e530` | Shared `decideSkip`, `skipFallback`; 14 tests |
+| `57cff84e` | Mix on skip in the controller and `SessionPlayer`; setting `mix_on_skip`; skip booked as a skip |
+
+How it works: see design doc sections 2 and 4.7. Logs: `plan ... style=<style>/<length>`
+and `skip <reason> ...` under `BitChordTransitions`.
+
+**Device test checklist** (none done yet):
+1. Settings > Automix shows Mix style, Blend length and Mix on skip.
+2. Style Fade / Rise / Quick and Short / Long change a track-end mix (log `plan` line shows `style=`).
+3. Mix on skip on, press next mid-song: a 2-4 s blend, on the beat, with the
+   screen on the new song at once; the new song starts after its silent intro.
+4. Swipe, notification and headset next blend too; a queue tap and previous are instant.
+5. Two quick presses: two songs skipped, no stacked blend (`skip-cut-busy` / `skip-cut-rapid`).
+6. Next on a song not downloaded yet: a short plain fade (`skip-fade`) or a plain
+   skip after 2.5 s, never silence while the old song is still meant to play.
+7. Next with under 5 s left, paused, or with Mix on skip off: instant.
+8. ListenBrainz: a skipped song is not submitted as listened to.
+
+**Risks to watch on device:** the button can feel up to ~0.5 s slower (beat wait);
+Play next rows (USER_QUEUE) are not pruned at a blended handover, as for every
+blend; the echo-out on a 2 s blend at fast tempos may sound busy.
 
 ## Bugs found on device (beat-aware Automix, Android)
 
@@ -141,19 +178,20 @@ duration or analysis in time, but this is not confirmed.
 `BitChordTransitions` logs: `plan` (one per distinct decision, with the gate
 verdict), `loop` verdicts, `gate` (a pair held back by the failure record),
 `start`, `arm`, `cancel` (listener), `failure`, `bail`, `loop mix stops`,
-`loop settle`, `finish`, `queue changed`, `plans dropped`.
+`loop settle`, `finish`, `queue changed`, `plans dropped`, `marker`
+(shown / provisional / hidden), `skip <reason>`, `skip blend starts`,
+`skip blend abandoned`.
 
 ## Next
 
-1. Device test (dev build installed 16 Nov 16:53): DRAMATICA tracks 1 -> 2 -> 3
+1. Device tests: the Mix on skip checklist above; DRAMATICA tracks 1 -> 2 -> 3
    gapless (`same-album-gapless`); Play next on a never-played song shows a dimmed
    window at once that brightens (and may move) when analysis lands.
-2. PC port of the album match and R3 change; then drop `androidOnly` on 012-013
-   and update the design doc in both forks.
-3. Loop mix failing near the song end (above).
-4. Mix popup glitches, when a screenshot arrives (low priority).
-5. Update the design doc (section 4: failure record and queue hook; section 9)
-   in both forks.
+2. PC port (spec 0.4, all "PC: New, to do"): album match and R3, failure record,
+   `applyMixStyle`, `decideSkip`; then drop `androidOnly` on 012-018.
+3. Translations for the new strings (before any upstream PR).
+4. Loop mix failing near the song end (above).
+5. Mix popup glitches, when a screenshot arrives (low priority).
 
 ## Open questions
 
