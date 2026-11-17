@@ -298,6 +298,22 @@
     <string name="automix_length_short">Short</string>
     <string name="automix_length_medium">Medium</string>
     <string name="automix_length_long">Long</string>
+    <!-- Mix: custom transitions per playlist (transitions-design.md 0.5). English only for now. -->
+    <string name="mix_title">Mix</string>
+    <string name="mix_subtitle">Custom transitions between the songs of this playlist</string>
+    <string name="mix_needs_automix">Custom transitions play while Automix is on</string>
+    <string name="mix_analyse">Analyse playlist</string>
+    <string name="mix_analysing">Analysing…</string>
+    <string name="mix_analysed">Analysed %1$d of %2$d songs</string>
+    <string name="mix_needs_wifi">Connect to Wi-Fi, or allow mobile data under Downloads, to analyse</string>
+    <string name="mix_not_ready">Start playback once, then try again</string>
+    <string name="mix_bpm">%1$d BPM</string>
+    <string name="mix_transition_auto">Auto</string>
+    <string name="mix_transition_custom">Custom · %1$s · %2$s</string>
+    <string name="mix_transition_gapless">Gapless</string>
+    <string name="mix_transition_no_mix">No mix</string>
+    <string name="mix_bars">%1$d bars</string>
+    <string name="mix_seconds">%1$d s</string>
     <string name="mix_on_skip">Mix on skip</string>
     <string name="mix_on_skip_subtitle">Blend into the next song when you skip mid-song instead of cutting. Previous stays instant</string>
     <string name="skip_silence">Skip silence</string>

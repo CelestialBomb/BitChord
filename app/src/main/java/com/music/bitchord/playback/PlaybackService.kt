@@ -640,6 +640,7 @@ class PlaybackService : MediaLibraryService() {
 
     /** Automix's DSP analyzer — see [com.music.bitchord.playback.smart.TrackAnalyzer]. */
     private val trackAnalyzer = com.music.bitchord.playback.smart.TrackAnalyzer(this, AudioCache)
+        .also { com.music.bitchord.playback.smart.AnalysisBridge.analyzer = it }
 
     /** Shared with the crossfade's tail player, so both read the same disk cache. */
     private var mediaSourceFactory: DefaultMediaSourceFactory? = null
@@ -7856,6 +7857,7 @@ class PlaybackService : MediaLibraryService() {
         serviceLyricsJob = null
         serviceLyrics = null
         cancelPrefetch()
+        com.music.bitchord.playback.smart.AnalysisBridge.analyzer = null
         trackAnalyzer.release()
         loudnessRetryJob?.cancel()
         // The YouTube Music history entry for whatever was playing, closed out

@@ -329,6 +329,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import com.music.bitchord.ui.player.LocalPlayerDock
 import com.music.bitchord.ui.player.PlayerDock
 import com.music.bitchord.ui.screens.DetailScreen
+import com.music.bitchord.ui.screens.rememberPlaylistMix
 import com.music.bitchord.ui.screens.sortedForDetail
 import com.music.bitchord.ui.screens.ExploreScreen
 import com.music.bitchord.ui.screens.LocalFolder
@@ -3344,6 +3345,7 @@ private fun BitChordApp(
                                 },
                                 songSort = songSort,
                                 folder = folder,
+                                mix = rememberPlaylistMix(page, isFolder = folder != null),
                                 contentPadding = listPadding,
                                 reorder = if (reordering != null) {
                                     { palette ->

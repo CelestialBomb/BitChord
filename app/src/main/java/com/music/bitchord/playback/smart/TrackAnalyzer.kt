@@ -1573,6 +1573,18 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
 
     private val windowStore = MixWindowStore({ context.filesDir })
 
+    /** A saved editor window, if there is one: no decode, no network. */
+    fun savedWindow(trackId: String, side: WindowSide, durationMs: Long): MixWindow? =
+        windowStore.load(trackId, side, durationMs)
+
+    /**
+     * The analysis of [trackId] if one exists, in memory or stored from an
+     * earlier session (a head-only result counts: it has tempo and key). Never
+     * starts any work. Reads a file when it has to.
+     */
+    fun knownAnalysis(trackId: String): TrackAnalysis? =
+        results[trackId]?.takeIf { it.isUsable } ?: store.load(trackId)?.takeIf { it.isUsable }
+
     /**
      * The editor's waveform and beat grid for one end of a song, without the
      * whole song (design doc 4.8): [WindowSide.TAIL] is its last 45 s, [WindowSide.HEAD]

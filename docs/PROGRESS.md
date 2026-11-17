@@ -24,7 +24,7 @@ backup must include custom transitions and Mix flags; the editor loads only the
 | 2. Store, Mix flag, backup section + round-trip test | **Done**, app tests 1249 pass (7 new) |
 | 3. Controller hook, high-pass exit, preview override | **Done**, app tests 1254 pass; no UI yet, so nothing to try on the phone |
 | 4. `MixWindowStore`, window plan, window loader | **Done in code**, shared 208 / app 1255 pass; **not yet run against a real stream** (needs the editor, step 6) |
-| 5. Playlist UI (toggle, BPM/key, transition rows, Analyse playlist) | To do |
+| 5. Playlist UI (toggle, BPM/key, transition rows, Analyse playlist) | **Done in code**, app tests 1262 pass; app starts cleanly; **not yet looked at on screen** |
 | 6. Editor sheet and Preview | To do |
 | 7. Design doc 0.5 (both repos), push | To do |
 
@@ -65,6 +65,18 @@ blocks a fetch on a metered or unknown connection but never cache or saved reads
 **Risk to check first on the phone:** that the extractor seeks into a partly cached WebM
 (needs its seek index inside the 256 KB header fetch); the log line is `Mix window <id>
 <side> from <source>: ...` or the reason it failed.
+
+Step 5 notes: on a playlist page (`BrowseType.PLAYLIST`, YouTube Music or local; not albums,
+artists or folders) a Mix switch sits under the header. With it on: tempo and key after the
+artist on each row (`SongRow.traits`), a transition line between songs, and an Analyse
+playlist button. Transition lines show only in the playlist's own order (no filter, default
+sort), since a sort puts rows side by side that never play back-to-back; they are plain labels
+until the editor exists (step 6 supplies `onOpenTransition`). `AnalysisBridge` gives the UI
+the service's analyzer (same process): tempo/key from memory, the store, or a saved opening
+window; Analyse playlist asks four songs at a time, respects Wi-Fi only, and says so if it
+cannot start. Playlist ids are normalised (`VLPL..` = `PL..`) in the store so a pair saved on
+the page also matches when the playlist is played from a card. Key shows once a song has a
+head or whole analysis; a row with neither shows nothing extra.
 
 Step 1 notes: reason codes `before-custom` / `custom`, `custom-gapless`,
 `custom-no-mix`; fallbacks are policy reasons on the planner's own plan

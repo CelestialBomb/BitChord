@@ -34,6 +34,17 @@ class CustomTransitionStoreTest {
     }
 
     @Test
+    fun aPlaylistIsTheSamePlaylistWithOrWithoutTheVlPrefix() {
+        CustomTransitionStore.setMix("VLPL123", true)
+        CustomTransitionStore.save("VLPL123", "a", "b", saved)
+        assertEquals("played from a card that stamps PL...", saved, CustomTransitionStore.effective("PL123", "a", "b"))
+        assertEquals(saved, CustomTransitionStore.effective("VLPL123", "a", "b"))
+        assertEquals(listOf("PL123"), CustomTransitionStore.snapshot.value.mixPlaylists)
+        CustomTransitionStore.setMix("PL123", false)
+        assertNull(CustomTransitionStore.effective("VLPL123", "a", "b"))
+    }
+
+    @Test
     fun aPairBelongsToItsPlaylistAndDirection() {
         CustomTransitionStore.setMix("PL", true)
         CustomTransitionStore.setMix("OTHER", true)

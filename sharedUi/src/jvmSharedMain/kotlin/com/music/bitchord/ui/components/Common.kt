@@ -302,6 +302,8 @@ fun SongRow(
      * wash it stops being legible as a second line and starts disappearing.
      */
     subtitleColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    /** Tempo and key of the song, shown after the artist on a playlist with Mix on; null leaves the row as it was. */
+    traits: String? = null,
     /**
      * What the badge on an already-downloaded row is tinted, or null to leave
      * those rows unmarked.
@@ -347,6 +349,7 @@ fun SongRow(
             modifier = if (onSwipeToQueue != null) Modifier.background(rowBackground) else modifier,
             trackNumber = trackNumber,
             subtitleColor = subtitleColor,
+            traits = traits,
             downloadedTint = downloadedTint,
             isCurrent = isCurrent,
             isPlaying = isPlaying,
@@ -488,6 +491,7 @@ private fun SongRowContent(
     modifier: Modifier = Modifier,
     trackNumber: Int? = null,
     subtitleColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    traits: String? = null,
     downloadedTint: Color? = MaterialTheme.colorScheme.primary,
     isCurrent: Boolean = false,
     isPlaying: Boolean = false,
@@ -580,6 +584,7 @@ private fun SongRowContent(
             val subtitle = listOfNotNull(
                 song.artist.takeIf { it.isNotBlank() },
                 song.downloadFormat,
+                traits,
             ).joinToString(" · ")
             val quality = if (showSourceQuality) song.sourceQualityBadge() else null
             Row(verticalAlignment = Alignment.CenterVertically) {

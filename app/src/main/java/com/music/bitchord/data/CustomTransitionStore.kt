@@ -45,20 +45,28 @@ object CustomTransitionStore {
         }
     }
 
-    fun isMixOn(playlistId: String): Boolean = playlistId in _snapshot.value.mixPlaylists
+    /**
+     * One id per playlist whichever way it was reached: a YouTube Music playlist
+     * page is `VLPL...` while a card that plays the same playlist stamps `PL...`.
+     */
+    fun playlistKey(playlistId: String): String = playlistId.removePrefix("VL")
+
+    fun isMixOn(playlistId: String): Boolean = playlistKey(playlistId) in _snapshot.value.mixPlaylists
 
     fun setMix(playlistId: String, on: Boolean) = update { current ->
-        val others = current.mixPlaylists.filterNot { it == playlistId }
-        current.copy(mixPlaylists = if (on) others + playlistId else others)
+        val key = playlistKey(playlistId)
+        val others = current.mixPlaylists.filterNot { it == key }
+        current.copy(mixPlaylists = if (on) others + key else others)
     }
 
     fun get(playlistId: String, outgoingId: String, incomingId: String): CustomTransition? =
-        _snapshot.value.transitions[customTransitionKey(playlistId, outgoingId, incomingId)]
+        _snapshot.value.transitions[customTransitionKey(playlistKey(playlistId), outgoingId, incomingId)]
 
     fun save(playlistId: String, outgoingId: String, incomingId: String, transition: CustomTransition) {
         update { current ->
             current.copy(
-                transitions = current.transitions + (customTransitionKey(playlistId, outgoingId, incomingId) to transition),
+                transitions = current.transitions +
+                    (customTransitionKey(playlistKey(playlistId), outgoingId, incomingId) to transition),
             )
         }
         onPairEdited?.invoke(outgoingId, incomingId)
@@ -80,7 +88,7 @@ object CustomTransitionStore {
      */
     fun effective(playlistId: String, outgoingId: String, incomingId: String): CustomTransition? {
         preview?.let { p ->
-            if (p.key == customTransitionKey(playlistId, outgoingId, incomingId)) return p.transition
+            if (p.key == customTransitionKey(playlistKey(playlistId), outgoingId, incomingId)) return p.transition
         }
         return if (isMixOn(playlistId)) get(playlistId, outgoingId, incomingId) else null
     }
@@ -92,7 +100,7 @@ object CustomTransitionStore {
 
     /** Preview in the editor: [transition] stands in for this pair until it is used or [clearPreview] runs. Memory only. */
     fun setPreview(playlistId: String, outgoingId: String, incomingId: String, transition: CustomTransition) {
-        preview = Preview(customTransitionKey(playlistId, outgoingId, incomingId), transition)
+        preview = Preview(customTransitionKey(playlistKey(playlistId), outgoingId, incomingId), transition)
         onPairEdited?.invoke(outgoingId, incomingId)
     }
 
@@ -102,13 +110,13 @@ object CustomTransitionStore {
 
     /** Uses the preview up when the blend it was for begins; a blend for another pair leaves it. */
     fun consumePreview(playlistId: String, outgoingId: String, incomingId: String) {
-        if (preview?.key == customTransitionKey(playlistId, outgoingId, incomingId)) preview = null
+        if (preview?.key == customTransitionKey(playlistKey(playlistId), outgoingId, incomingId)) preview = null
     }
 
     /** Back to the automatic plan for this pair. */
     fun reset(playlistId: String, outgoingId: String, incomingId: String) {
         update { current ->
-            current.copy(transitions = current.transitions - customTransitionKey(playlistId, outgoingId, incomingId))
+            current.copy(transitions = current.transitions - customTransitionKey(playlistKey(playlistId), outgoingId, incomingId))
         }
         onPairEdited?.invoke(outgoingId, incomingId)
     }

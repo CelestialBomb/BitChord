@@ -367,6 +367,11 @@ fun DetailScreen(
      * [ArtworkPalette] so it reads as this page rather than a sheet over it.
      */
     reorder: (@Composable (ArtworkPalette) -> Unit)? = null,
+    /**
+     * Mix: custom transitions between a playlist's songs. Null on anything that
+     * is not a playlist. See [PlaylistMixState].
+     */
+    mix: PlaylistMixState? = null,
 ) {
     val rawSongs = (page.songs as? UiState.Success)?.data.orEmpty()
     // A folder keeps its own sort — the one its top bar menu sets — rather
@@ -604,6 +609,10 @@ fun DetailScreen(
                 }
             }
 
+            if (mix != null) {
+                item(key = "mix") { MixHeaderRow(mix, palette) }
+            }
+
             if (searching) {
                 item(key = "search") {
                     DetailSearchField(
@@ -792,12 +801,24 @@ fun DetailScreen(
                             // what the filter — or a sort — left standing.
                             trackNumber = originalTrackNumbers[song.videoId].takeIf { numbered },
                             subtitleColor = palette.onBackgroundVariant,
+                            traits = if (mix?.enabled == true) mix.traitsLine(song) else null,
                             downloadedTint = downloadedTint,
                             isCurrent = isCurrent,
                             isPlaying = isCurrent && isPlaying,
                             activeTint = palette.accent,
                             searchPlayingStyle = true,
                         )
+                        // Between two songs of a playlist in its own running order. A
+                        // filter or a sort puts rows next to each other that never play
+                        // back-to-back, so the transition row waits for the plain list.
+                        val following = matches.getOrNull(position + 1)?.value
+                        if (mix?.enabled == true && following != null && query.isBlank() && songSort == SongSort.DEFAULT) {
+                            TransitionRow(
+                                summary = mix.summary(song, following),
+                                palette = palette,
+                                onClick = mix.onOpenTransition?.let { open -> { open(song, following) } },
+                            )
+                        }
                         if (position < matches.lastIndex) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(
