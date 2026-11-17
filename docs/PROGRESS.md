@@ -11,6 +11,30 @@ skipped as in CI): 1242, 0 failures, 1 skipped. PC `cargo test transitions`: 7
 pass, fixtures 012-018 skipped there as `androidOnly`. Dev APK with the mix view
 fix and the cleanup installed on the test phone at 23:20 (`com.dev.bitchord`, arm64).
 
+### Stage 2: custom transitions per playlist (17 Nov, in progress)
+
+Approved plan: `C:\Users\kcbum\.claude\plans\pasted-content-id-2848-next-stage-silly-orbit.md`
+(Preview plays for real; no EQ in v1; 45 s windows; "Analyse playlist" button;
+backup must include custom transitions and Mix flags; the editor loads only the
+45 s windows it needs, cache first, Wi-Fi only, full download as a last resort).
+
+| Step | Status |
+|---|---|
+| 1. `CustomTransition`, `applyCustomTransition`, fixtures 019-023 | **Done**, shared tests 187 pass |
+| 2. Store, Mix flag, backup section + round-trip test | To do |
+| 3. Controller hook, high-pass exit, preview override | To do |
+| 4. `MixWindowStore`, `WindowSource`, window loader | To do |
+| 5. Playlist UI (toggle, BPM/key, transition rows, Analyse playlist) | To do |
+| 6. Editor sheet and Preview | To do |
+| 7. Design doc 0.5 (both repos), push | To do |
+
+Step 1 notes: reason codes `before-custom` / `custom`, `custom-gapless`,
+`custom-no-mix`; fallbacks are policy reasons on the planner's own plan
+(`custom-fallback-duration`, `-window`, `-late`). `TransitionPlan` gained
+`exitFilter` / `exitFilterAmount` (defaults `NONE` / 0, so legacy plans are
+unchanged). A custom transition replaces the style and length settings for its
+pair. Echo-out (Quick) only on a pair the planner beat-matched.
+
 ### 16 Nov, late: toast fix and dead-code cleanup
 
 - **Device test:** all five Mix on skip tests passed (blends; previous and queue

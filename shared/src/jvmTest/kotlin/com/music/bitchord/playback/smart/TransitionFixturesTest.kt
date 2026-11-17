@@ -2,7 +2,9 @@ package com.music.bitchord.playback.smart
 
 import com.music.bitchord.playback.transitions.BeatAwareConfig
 import com.music.bitchord.playback.transitions.BlendLength
+import com.music.bitchord.playback.transitions.CustomTransition
 import com.music.bitchord.playback.transitions.MixStyle
+import com.music.bitchord.playback.transitions.applyCustomTransition
 import com.music.bitchord.playback.transitions.applyMixStyle
 import java.io.File
 import kotlin.test.Test
@@ -138,6 +140,47 @@ class TransitionFixturesTest {
             incoming = track("b", 120.0),
             androidOnly = true,
         ),
+        // Custom transitions (design doc 0.5). Android-only until the PC port has applyCustomTransition.
+        "019-custom-mix-rise-high-pass" to FixtureCase(
+            name = "Custom: a saved Rise mix, 8 bars from 20 s before the end, with a high-pass exit",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true),
+            outgoing = track("a", 120.0),
+            incoming = track("b", 120.0),
+            custom = FixtureCustom(style = "rise", bars = 8, startBeforeEndSeconds = 20.0, filter = "high-pass", filterAmount = 0.6),
+            androidOnly = true,
+        ),
+        "020-custom-quick-bass-swap" to FixtureCase(
+            name = "Custom: a saved Quick mix with bass swap, 4 bars from 30 s before the end",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true),
+            outgoing = track("a", 120.0),
+            incoming = track("b", 120.0),
+            custom = FixtureCustom(style = "quick", bars = 4, startBeforeEndSeconds = 30.0, bassSwap = true),
+            androidOnly = true,
+        ),
+        "021-custom-gapless" to FixtureCase(
+            name = "Custom: this pair is saved as gapless",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true),
+            outgoing = track("a", 120.0),
+            incoming = track("b", 120.0),
+            custom = FixtureCustom(mode = "gapless"),
+            androidOnly = true,
+        ),
+        "022-custom-no-mix" to FixtureCase(
+            name = "Custom: this pair is saved as no mix",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true),
+            outgoing = track("a", 120.0),
+            incoming = track("b", 120.0),
+            custom = FixtureCustom(mode = "no-mix"),
+            androidOnly = true,
+        ),
+        "023-custom-falls-back-when-the-song-changed" to FixtureCase(
+            name = "Custom: a saved mix made for a 190 s version falls back to the automatic plan on a 200 s one",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true),
+            outgoing = track("a", 120.0),
+            incoming = track("b", 120.0),
+            custom = FixtureCustom(style = "rise", outDurationMs = 190_000),
+            androidOnly = true,
+        ),
         "018-style-never-overrides-a-fallback" to FixtureCase(
             name = "Style Rise and length Short leave a weak-grid plain crossfade alone",
             settings = FixtureSettings(
@@ -153,13 +196,39 @@ class TransitionFixturesTest {
         ),
     )
 
-    private fun planFor(case: FixtureCase): TransitionPlan = applyMixStyle(
-        rawPlanFor(case),
-        MixStyle.fromKey(case.settings.mixStyle),
-        BlendLength.fromKey(case.settings.blendLength),
-        durationSeconds = case.outgoing.analysis.duration,
-        currentTime = case.positionSeconds,
-    )
+    // A custom transition replaces the style and length settings, as in the controller.
+    private fun planFor(case: FixtureCase): TransitionPlan {
+        val custom = case.custom
+        return if (custom != null) {
+            applyCustomTransition(
+                rawPlanFor(case),
+                CustomTransition(
+                    mode = custom.mode,
+                    style = custom.style,
+                    bars = custom.bars,
+                    seconds = custom.seconds,
+                    startBeforeEndSeconds = custom.startBeforeEndSeconds,
+                    bassSwap = custom.bassSwap,
+                    filter = custom.filter,
+                    filterAmount = custom.filterAmount,
+                    outDurationMs = custom.outDurationMs,
+                    inDurationMs = custom.inDurationMs,
+                ),
+                case.outgoing.analysis.toTrackAnalysis(case.outgoing.id),
+                durationSeconds = case.outgoing.analysis.duration,
+                nextDurationSeconds = case.incoming.analysis.duration,
+                currentTime = case.positionSeconds,
+            )
+        } else {
+            applyMixStyle(
+                rawPlanFor(case),
+                MixStyle.fromKey(case.settings.mixStyle),
+                BlendLength.fromKey(case.settings.blendLength),
+                durationSeconds = case.outgoing.analysis.duration,
+                currentTime = case.positionSeconds,
+            )
+        }
+    }
 
     private fun rawPlanFor(case: FixtureCase): TransitionPlan = with(
         BeatAwareConfig(

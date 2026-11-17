@@ -63,6 +63,24 @@ data class FixtureExpected(
     val incomingPlaybackRate: Double = 1.0,
     val outgoingPlaybackRate: Double = 1.0,
     val policyReasons: List<String> = emptyList(),
+    /** `NONE`, `LOW_PASS` or `HIGH_PASS` (custom transitions). */
+    val exitFilter: String = "NONE",
+    val exitFilterAmount: Double = 0.0,
+)
+
+/** A saved custom transition for the case's pair; see `CustomTransition`. Omitted keys take its defaults. */
+@Serializable
+data class FixtureCustom(
+    val mode: String = "mix",
+    val style: String = "smooth",
+    val bars: Int = 8,
+    val seconds: Double = 8.0,
+    val startBeforeEndSeconds: Double = 16.0,
+    val bassSwap: Boolean = false,
+    val filter: String = "none",
+    val filterAmount: Double = 0.7,
+    val outDurationMs: Long = 200_000,
+    val inDurationMs: Long = 200_000,
 )
 
 @Serializable
@@ -73,6 +91,8 @@ data class FixtureCase(
     val incoming: FixtureTrack,
     val positionSeconds: Double = 10.0,
     val expected: FixtureExpected = FixtureExpected(),
+    /** Present: the saved custom transition applied after the planner. */
+    val custom: FixtureCustom? = null,
     /** The PC runner skips these until the Rust port covers the case. */
     val androidOnly: Boolean = false,
 )
@@ -121,6 +141,8 @@ fun TransitionPlan.toExpected() = FixtureExpected(
     incomingPlaybackRate = incomingPlaybackRate.roundSix(),
     outgoingPlaybackRate = outgoingPlaybackRate.roundSix(),
     policyReasons = policyReasons,
+    exitFilter = exitFilter.name,
+    exitFilterAmount = exitFilterAmount.roundSix(),
 )
 
 val fixtureJson = Json {

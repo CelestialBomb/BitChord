@@ -145,6 +145,9 @@ enum class TransitionStyle {
     DJ_FILTER,
 }
 
+/** A filter the listener asked for on the outgoing track's exit (custom transitions). */
+enum class ExitFilter { NONE, LOW_PASS, HIGH_PASS }
+
 /**
  * The gesture used inside an unmatched-tempo [TransitionStyle.DJ_FILTER].
  *
@@ -247,6 +250,10 @@ data class TransitionPlan(
     val echoSeconds: Double = 0.0,
     /** Why the policy landed where it did, when it declined to be more ambitious. */
     val policyReasons: List<String> = emptyList(),
+    /** Custom transitions only: a filter laid over the outgoing track's exit. The planner never sets it. */
+    val exitFilter: ExitFilter = ExitFilter.NONE,
+    /** 0..1: how far [exitFilter] closes. */
+    val exitFilterAmount: Double = 0.0,
 ) {
     /** Convenience for the engine, which schedules in milliseconds. */
     val fadeMs: Long get() = (fadeSeconds * 1000).roundToLong()

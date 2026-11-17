@@ -153,7 +153,7 @@ fun skipFallback(decision: SkipDecision): SkipDecision = decision.copy(
 )
 
 /** One beat of [analysis]'s grid when it can be trusted, otherwise 0. */
-private fun trustedBeatSeconds(analysis: TrackAnalysis): Double {
+internal fun trustedBeatSeconds(analysis: TrackAnalysis): Double {
     if (!analysis.isUsable || analysis.beatConfidence < SKIP_MIN_BEAT_CONFIDENCE) return 0.0
     if (analysis.bpm !in 40.0..220.0) return 0.0
     val fromTempo = 60.0 / analysis.bpm
