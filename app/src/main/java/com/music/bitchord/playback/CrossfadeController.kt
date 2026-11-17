@@ -1552,7 +1552,7 @@ class CrossfadeController(
             val around = duration / 1000.0 - wanted.startBeforeEndSeconds
             val choice = LoopMix.Custom(wanted.loopBars, around, holdTempo = !wanted.loopRamp)
             val fellKey = "${currentItem.mediaId}->${nextItem.mediaId}|${System.identityHashCode(currentAnalysis)}|" +
-                "${System.identityHashCode(nextAnalysis)}|$choice"
+                "${System.identityHashCode(nextAnalysis)}|${wanted.loopBars}/${wanted.startBeforeEndSeconds.roundToInt()}/${wanted.loopRamp}"
             if (fellKey == customLoopFellKey && player.currentPosition >= customLoopFellAtMs) {
                 customLoopFell = customLoopFellWhy
             } else {
@@ -2998,9 +2998,25 @@ class CrossfadeController(
         SleepTimer.afterTrack.value -> "sleep timer"
         state.current != TrackAnalysisState.ANALYSED || state.next != TrackAnalysisState.ANALYSED -> "waiting on analysis"
         isSourceBacked(current) || isSourceBacked(next) -> "analysed off another recording"
-        loopPortOf(player)?.supportsLoopMix != true -> "this output can't take it (${loopPortOf(player)?.let { "precision=${it.precision} ch=${it.channelCount} rate=${it.sampleRate}" } ?: "no port"})"
+        // A sink that has not played yet (paused, a queue just restored, or players rebuilt after an output
+        // change such as earbuds connecting) still reads as never configured: that is a wait, not a limit.
+        loopPortOf(player)?.let { it.sampleRate == 0 && !it.precision } == true -> "waiting on the audio output (${sinkNote(player)})"
+        loopPortOf(player)?.supportsLoopMix != true -> "this output can't take it (${sinkNote(player)})"
         loopPortOf(standby()) == null -> "no standby sink"
         else -> null
+    }
+
+    /**
+     * What the loop mix's port and the player report, for the refusal text: whether the port was ever
+     * configured (precision, channels, rate), whether this player is the one playing, and the format it
+     * decodes to. A port that reads 0/0 was never configured by the sink the player is using.
+     */
+    private fun sinkNote(player: ExoPlayer): String {
+        val port = loopPortOf(player)
+        val format = player.audioFormat
+        return (port?.let { "precision=${it.precision} ch=${it.channelCount} rate=${it.sampleRate}" } ?: "no port") +
+            " playing=${player.isPlaying} ready=${player.playbackState == Player.STATE_READY}" +
+            " format=${format?.sampleMimeType}/${format?.pcmEncoding}/${format?.sampleRate}"
     }
 
     /** A track whose analysis reads a matched YouTube recording rather than what plays. */
@@ -3040,7 +3056,10 @@ class CrossfadeController(
             noteLoopVerdict(pair, null, "waiting on lyrics")
             return null
         }
-        val key = "$pair|${System.identityHashCode(currentAnalysis)}|${System.identityHashCode(nextAnalysis)}|$custom"
+        // The saved choices, not the start time worked out from this tick's duration: a stream upgrade moves
+        // the duration by a few ms, and a new key would re-plan from the later playhead and lose the loop.
+        val customKey = custom?.let { "${it.bars}/${it.aroundOutSec.roundToInt()}/${it.holdTempo}" }
+        val key = "$pair|${System.identityHashCode(currentAnalysis)}|${System.identityHashCode(nextAnalysis)}|$customKey"
         val cached = loopPlanned
         // Kept while its loop is still far enough ahead to set up; a seek past
         // that plans again from the new playhead.

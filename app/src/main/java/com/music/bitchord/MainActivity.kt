@@ -3410,7 +3410,14 @@ private fun BitChordApp(
                                                 repeat(40) {
                                                     delay(150)
                                                     val c = controller
-                                                    if (c != null && c.currentMediaItem?.mediaId == out.videoId) {
+                                                    // The new two-song queue itself, not just the song: when the pair's first
+                                                    // song is already playing, it is current on the OLD queue at once, and a
+                                                    // seek then is lost when the new queue replaces it.
+                                                    if (c != null && c.mediaItemCount == 2 &&
+                                                        c.getMediaItemAt(0).mediaId == out.videoId &&
+                                                        c.getMediaItemAt(1).mediaId == into.videoId &&
+                                                        c.currentMediaItemIndex == 0
+                                                    ) {
                                                         c.seekTo((startSeconds * 1000).toLong())
                                                         return@launch
                                                     }
