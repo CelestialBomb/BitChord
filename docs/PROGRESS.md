@@ -6,10 +6,33 @@ Newest first. Update after every step and commit with it. See `CLAUDE.md` /
 ## Current state (16 Nov 2026, evening)
 
 Branch `transitions`. Spec v0.4 (identical in the PC repo). Shared JVM tests:
-172 in 23 suites, all pass. App unit tests (`testDevDebugUnitTest`, locale test
+171 in 23 suites, all pass. App unit tests (`testDevDebugUnitTest`, locale test
 skipped as in CI): 1242, 0 failures, 1 skipped. PC `cargo test transitions`: 7
-pass, fixtures 012-018 skipped there as `androidOnly`. Dev APK with Mix on skip
-installed on the test phone at 22:45 (`com.dev.bitchord`, arm64).
+pass, fixtures 012-018 skipped there as `androidOnly`. Dev APK with the mix view
+fix and the cleanup installed on the test phone at 23:20 (`com.dev.bitchord`, arm64).
+
+### 16 Nov, late: toast fix and dead-code cleanup
+
+- **Device test:** all five Mix on skip tests passed (blends; previous and queue
+  taps instant; clean double skips; styles and lengths work).
+- **Bug 5, fixed `95e5ca8a`, awaiting device check:** after removing a Play next
+  song, a toast "No Automix transition coming up" appeared while a mix played.
+  Log: the plan for the new next song was redone 0.2 s after the removal
+  (23:02:40), so it was not a stale plan. Cause: during a filter or echo skip
+  blend the "Mixing" label was shown and tappable, but `publishMixView` returned
+  early (a skip blend has no planner plan). The popup found no view, nothing
+  re-plans mid-blend, and after 2.5 s it closed with that toast. Fix: a skip blend
+  publishes a blend view (beat from its decision, span from where it really
+  started, waveforms decoded once it runs). Also: the `marker` log line is reset on
+  a queue change; it was deduped on its verdict alone and stayed silent for a new
+  pair. Check on device: during a skip blend, tap "Mixing": the overview shows the
+  blend instead of the toast.
+- **Cleanup `08bd93d4`:** reviewed `git diff v1.9.1..HEAD`; removed only dead code
+  the branch added: a dead `armDeadline` write, a doc-only import, an unreachable
+  check in `noteFailure`, a duplicate `skipGuard` call, `TransitionFailureLog.clear`
+  and `isEmpty` (test-only), and needless `internal` visibility (`sameAlbum` is
+  private again, as upstream). All added strings, settings keys and setters are
+  used; no compiler warnings in added code. No upstream code touched.
 
 **Before any upstream PR:** the new strings (Mix style, Blend length, Mix on skip
 and their options) are English only. Add translations for the 20 locales that
@@ -31,7 +54,7 @@ for now; the design doc is committed and pushed in the PC repo too.
 How it works: see design doc sections 2 and 4.7. Logs: `plan ... style=<style>/<length>`
 and `skip <reason> ...` under `BitChordTransitions`.
 
-**Device test checklist** (none done yet):
+**Device test checklist** (items 1-5 passed on 16 Nov; 6-8 not yet checked):
 1. Settings > Automix shows Mix style, Blend length and Mix on skip.
 2. Style Fade / Rise / Quick and Short / Long change a track-end mix (log `plan` line shows `style=`).
 3. Mix on skip on, press next mid-song: a 2-4 s blend, on the beat, with the
@@ -184,9 +207,10 @@ verdict), `loop` verdicts, `gate` (a pair held back by the failure record),
 
 ## Next
 
-1. Device tests: the Mix on skip checklist above; DRAMATICA tracks 1 -> 2 -> 3
-   gapless (`same-album-gapless`); Play next on a never-played song shows a dimmed
-   window at once that brightens (and may move) when analysis lands.
+1. Device tests: tap "Mixing" during a skip blend (bug 5); Mix on skip checklist
+   items 6-8; DRAMATICA tracks 1 -> 2 -> 3 gapless (`same-album-gapless`); Play
+   next on a never-played song shows a dimmed window at once that brightens (and
+   may move) when analysis lands.
 2. PC port (spec 0.4, all "PC: New, to do"): album match and R3, failure record,
    `applyMixStyle`, `decideSkip`; then drop `androidOnly` on 012-018.
 3. Translations for the new strings (before any upstream PR).
