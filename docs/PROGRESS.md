@@ -279,6 +279,30 @@ Implemented in `0ed30bb0`, Beat-aware only (off: unchanged):
 Known limit: when an analysis has failed for good, the window stays dimmed
 (it will not move, but it is still the fallback plan).
 
+### Custom loop mix in the editor (17 Nov): built, tests pass, phone check pending
+
+Answer to "can a custom transition use the loop mix": it could not (the controller skipped
+the loop for every custom pair). Now a Mix pair can ask for it: Loop mix switch, loop length
+1/2/4 bars, Tempo ramp switch (design doc 4.8.1). Decisions: ramp off holds the outgoing
+tempo then steps (only within 8 BPM, else locked on); a loop that cannot be made falls back
+to the whole automatic plan (`custom-fallback-loop`).
+
+Analyse playlist does NOT give the loop what it needs: it asks for the opening-window pass
+only (tempo, key, a beat grid) and counts that as analysed. The vocal mask, level windows and
+tail beats come from the whole-track pass, which needs the song in the cache whole (played
+through or downloaded). So the editor enables Loop only when both songs have it
+(`TrackAnalyzer.hasWholeAnalysis`) and says "Play both songs all the way through once".
+Analyse playlist is unchanged.
+
+Done: `LoopMix.Custom` / `holdTempo` / `estimate`, `CustomTransition.loop*`, controller hook
+(plans the custom loop first, waits for lyrics/analysis, falls back), editor controls with a
+tempo summary and a warning when the start is too late for the tempos, page row label
+"Custom . Loop mix . 2 bars", backup round trip. Shared 253+ and app tests pass.
+
+To check on the phone (the phone was locked): the Loop switch is enabled for two songs that
+have played through; Preview of a loop pair logs `plan ... custom=loop/2bars/ramp` and
+`loop mix at ...`; a pair with no clean loop near the start logs `custom=fallback(loop: ...)`.
+
 ### Loop mix fails near the song end: cause found and fixed (17 Nov)
 
 The cause was the handover landing after the outgoing file's end. Under the

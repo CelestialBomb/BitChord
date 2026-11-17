@@ -29,6 +29,14 @@ class CustomTransitionBackupTest {
         inDurationMs = 187_000,
     )
     private val noMix = CustomTransition(mode = CustomTransition.MODE_NO_MIX, outDurationMs = 180_000, inDurationMs = 200_000)
+    private val loopMix = CustomTransition(
+        loop = true,
+        loopBars = 2,
+        loopRamp = false,
+        startBeforeEndSeconds = 28.0,
+        outDurationMs = 201_000,
+        inDurationMs = 190_000,
+    )
 
     @Before
     fun clean() = CustomTransitionStore.replaceAll(CustomTransitionSnapshot())
@@ -43,6 +51,7 @@ class CustomTransitionBackupTest {
         CustomTransitionStore.setMix("PLoff", false)
         CustomTransitionStore.save("PLyoutube", "a", "b", rise)
         CustomTransitionStore.save("PLyoutube", "b", "c", noMix)
+        CustomTransitionStore.save("PLyoutube", "c", "d", loopMix)
         CustomTransitionStore.save("local:playlist:7", "x", "y", rise.copy(bassSwap = true))
     }
 
@@ -65,6 +74,7 @@ class CustomTransitionBackupTest {
         assertFalse("a playlist whose Mix was switched off stays off", CustomTransitionStore.isMixOn("PLoff"))
         assertEquals(rise, CustomTransitionStore.get("PLyoutube", "a", "b"))
         assertEquals(noMix, CustomTransitionStore.get("PLyoutube", "b", "c"))
+        assertEquals("the loop mix, its length and the held tempo survive", loopMix, CustomTransitionStore.get("PLyoutube", "c", "d"))
         assertEquals(true, CustomTransitionStore.get("local:playlist:7", "x", "y")?.bassSwap)
         assertNull("pairs are per playlist", CustomTransitionStore.get("local:playlist:7", "a", "b"))
     }

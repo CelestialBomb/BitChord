@@ -46,6 +46,9 @@ object AnalysisBridge {
             ?.let { Traits(it.bpm, "") }
     }
 
+    /** Whether [song] has what the loop mix is planned from; see [TrackAnalyzer.hasWholeAnalysis]. Reads a file. */
+    fun hasLoopAnalysis(song: Song): Boolean = analyzer?.hasWholeAnalysis(song.videoId) == true
+
     /** The editor's window for one end of [song], see [TrackAnalyzer.mixWindow]; null before the service is up. */
     suspend fun mixWindow(song: Song, side: WindowSide): TrackAnalyzer.WindowResult? {
         val a = analyzer ?: return null

@@ -43,7 +43,7 @@ import kotlin.math.roundToInt
 
 /** How a transition row reads: what the pair will do, in the words the row shows. */
 data class TransitionSummary(val kind: Kind, val style: MixStyle = MixStyle.SMOOTH, val bars: Int = 0, val seconds: Int = 0) {
-    enum class Kind { AUTO, MIX, GAPLESS, NO_MIX }
+    enum class Kind { AUTO, MIX, LOOP, GAPLESS, NO_MIX }
 
     companion object {
         /** No saved transition means the automatic plan. */
@@ -51,7 +51,11 @@ data class TransitionSummary(val kind: Kind, val style: MixStyle = MixStyle.SMOO
             null -> TransitionSummary(Kind.AUTO)
             CustomTransition.MODE_GAPLESS -> TransitionSummary(Kind.GAPLESS)
             CustomTransition.MODE_NO_MIX -> TransitionSummary(Kind.NO_MIX)
-            else -> TransitionSummary(Kind.MIX, custom.mixStyle, custom.bars, custom.seconds.roundToInt())
+            else -> if (custom.isLoopMix) {
+                TransitionSummary(Kind.LOOP, bars = custom.loopBars)
+            } else {
+                TransitionSummary(Kind.MIX, custom.mixStyle, custom.bars, custom.seconds.roundToInt())
+            }
         }
     }
 }
@@ -202,6 +206,10 @@ fun TransitionRow(summary: TransitionSummary, palette: ArtworkPalette, onClick: 
         TransitionSummary.Kind.AUTO -> stringResource(R.string.mix_transition_auto)
         TransitionSummary.Kind.GAPLESS -> stringResource(R.string.mix_transition_gapless)
         TransitionSummary.Kind.NO_MIX -> stringResource(R.string.mix_transition_no_mix)
+        TransitionSummary.Kind.LOOP -> stringResource(
+            R.string.mix_transition_loop,
+            if (summary.bars == 1) stringResource(R.string.mix_loop_one_bar) else stringResource(R.string.mix_bars, summary.bars),
+        )
         TransitionSummary.Kind.MIX -> {
             val length = if (summary.bars > 0) {
                 stringResource(R.string.mix_bars, summary.bars)

@@ -253,6 +253,41 @@ object LoopMix {
         return assemble(outPick, inPick, hold)
     }
 
+    /** What a loop mix between two tempos would be like, for the editor to show before any loop is chosen. */
+    data class Estimate(
+        /** The tempo the mix arrives at, in outgoing beats per minute. */
+        val targetBpm: Double,
+        /** How far apart the two tempos are once folded to double or half time. */
+        val gapBpm: Double,
+        /** Whether the tempo is held (only possible within [HOLD_TEMPO_MAX_BPM]) rather than ramped. */
+        val held: Boolean,
+        val rampBars: Int,
+        /** Seconds from the outgoing loop's start to the handover, and to the end of the whole mix. */
+        val handoverSeconds: Double,
+        val totalSeconds: Double,
+    )
+
+    /** The same arithmetic as [plan], on two tempos alone; null for a tempo that is not a number above zero. */
+    fun estimate(outBpm: Double, inBpm: Double, bars: Int, holdTempo: Boolean): Estimate? {
+        if (!(outBpm > 0) || !(inBpm > 0) || !outBpm.isFinite() || !inBpm.isFinite() || bars <= 0) return null
+        val outBeat = 60 / outBpm
+        val inBeat = 60 / inBpm
+        val plan = assemble(
+            Clean(0.0, bars * 4 * outBeat, bars, 0.0, Check.MASK),
+            Clean(0.0, bars * 4 * inBeat, bars, 0.0, Check.MASK),
+            holdTempo,
+        )
+        val clock = Clock(plan)
+        return Estimate(
+            targetBpm = plan.targetBpm,
+            gapBpm = abs(plan.targetBpm - outBpm),
+            held = plan.holdTempo,
+            rampBars = plan.rampBars,
+            handoverSeconds = clock.handoffAt,
+            totalSeconds = clock.elementAt,
+        )
+    }
+
     /** The plan for two chosen loops: the tempo ramp and the mix's length in bars follow from them. */
     private fun assemble(outPick: Clean, inPick: Clean, holdTempo: Boolean = false): Plan {
         val outBeat = (outPick.end - outPick.start) / (outPick.bars * 4)

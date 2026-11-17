@@ -34,6 +34,15 @@ class PlaylistMixLabelsTest {
     }
 
     @Test
+    fun aLoopMixReadsAsOneWithItsLoopLength() {
+        val summary = TransitionSummary.of(CustomTransition(loop = true, loopBars = 2, style = "rise", bars = 16))
+        assertEquals(TransitionSummary.Kind.LOOP, summary.kind)
+        assertEquals(2, summary.bars)
+        // the flag means nothing on a mode that never mixes
+        assertEquals(TransitionSummary.Kind.GAPLESS, TransitionSummary.of(CustomTransition(mode = CustomTransition.MODE_GAPLESS, loop = true)).kind)
+    }
+
+    @Test
     fun anUnknownStyleKeyFallsBackToSmooth() {
         assertEquals(MixStyle.SMOOTH, TransitionSummary.of(CustomTransition(style = "from-a-later-build")).style)
     }

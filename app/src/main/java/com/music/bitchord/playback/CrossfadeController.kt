@@ -1203,6 +1203,7 @@ class CrossfadeController(
         loopPlanned = null
         loopPlanKey = null
         loopRefusal = null
+        customLoopFellKey = null
         plannedTransition = null
         lastSmartPlan = null
         lastPlanVerdict = ""
@@ -1540,12 +1541,43 @@ class CrossfadeController(
         // already failed). It replaces the global style and length for the pair.
         // Where it no longer fits, [applyCustomTransition] hands the planner's
         // own plan back with a fallback code.
-        val custom = if (plainOnly) null else saved
+        var customWanted = if (plainOnly) null else saved
+        // A custom loop mix is planned first, here, because only the controller sees the lyrics the
+        // loop is vouched by. The pair waits while analysis or lyrics are still coming (with time
+        // to spare); when no loop fits it takes the automatic plan, loop mix included.
+        var customLoopPlan: LoopMix.Plan? = null
+        var customLoopFell: String? = null
+        val wanted = customWanted
+        if (wanted != null && wanted.isLoopMix && wanted.matchesDurations(duration / 1000.0, nextDuration / 1000.0)) {
+            val around = duration / 1000.0 - wanted.startBeforeEndSeconds
+            val choice = LoopMix.Custom(wanted.loopBars, around, holdTempo = !wanted.loopRamp)
+            val fellKey = "${currentItem.mediaId}->${nextItem.mediaId}|${System.identityHashCode(currentAnalysis)}|" +
+                "${System.identityHashCode(nextAnalysis)}|$choice"
+            if (fellKey == customLoopFellKey && player.currentPosition >= customLoopFellAtMs) {
+                customLoopFell = customLoopFellWhy
+            } else {
+                customLoopPlan = loopPlanFor(
+                    player, currentItem, nextItem, currentAnalysis, nextAnalysis, duration, nextDuration, analysisState, choice,
+                )
+                if (customLoopPlan == null) {
+                    if (loopWaiting && (around * 1000).roundToLong() - player.currentPosition > LOOP_ARM_LEAD_MS) {
+                        if (!markerOnly) holdAhead(player, duration)
+                        return
+                    }
+                    customLoopFell = loopRefusal ?: "no loop mix"
+                    customLoopFellKey = fellKey
+                    customLoopFellAtMs = player.currentPosition
+                    customLoopFellWhy = customLoopFell
+                }
+            }
+            if (customLoopFell != null) customWanted = null
+        }
+        val custom = customWanted
         // The listener's style and length, over the planner's choice. Only a
         // mix the planner chose is restyled; every fallback stays as planned.
         val mixStyle = AppSettings.automixStyle.value
         val blendLength = AppSettings.automixBlendLength.value
-        val plan = if (custom != null) {
+        val basePlan = if (custom != null) {
             applyCustomTransition(
                 plannerPlan, custom, currentAnalysis,
                 durationSeconds = duration / 1000.0,
@@ -1559,10 +1591,17 @@ class CrossfadeController(
                 currentTime = player.currentPosition / 1000.0,
             )
         }
+        val plan = if (customLoopFell != null) {
+            basePlan.copy(policyReasons = basePlan.policyReasons + "custom-fallback-loop")
+        } else {
+            basePlan
+        }
         val customApplied = custom != null && plan.policyReasons.none { it.startsWith("custom-fallback") }
         val customLabel = when {
+            customLoopFell != null -> "fallback(loop: ${customLoopFell.take(80)})"
             custom == null -> "none"
             !customApplied -> "fallback"
+            custom.isLoopMix -> "loop/${custom.loopBars}bars/${if (custom.loopRamp) "ramp" else "hold"}"
             else -> "${custom.mode}/${custom.style}/${if (custom.mode == CustomTransition.MODE_MIX) "${custom.bars}bars" else "-"}" +
                 "/filter=${custom.filter}"
         }
@@ -1599,17 +1638,19 @@ class CrossfadeController(
         publishMixPreview(currentItem, nextItem, duration, nextDuration, currentAnalysis, nextAnalysis, analysisState, plan, advanced)
 
         // The loop mix first: a pair it can do never reaches the blend below.
-        val loop = if (plainOnly || customApplied) {
-            loopPlanned = null
-            loopPlanKey = null
-            noteLoopVerdict(
-                "${currentItem.mediaId}->${nextItem.mediaId}",
-                null,
-                if (plainOnly) "this pair failed before" else "custom transition",
-            )
-            null
-        } else {
-            loopPlanFor(
+        val loop = when {
+            customLoopPlan != null -> customLoopPlan
+            plainOnly || customApplied -> {
+                loopPlanned = null
+                loopPlanKey = null
+                noteLoopVerdict(
+                    "${currentItem.mediaId}->${nextItem.mediaId}",
+                    null,
+                    if (plainOnly) "this pair failed before" else "custom transition",
+                )
+                null
+            }
+            else -> loopPlanFor(
                 player, currentItem, nextItem, currentAnalysis, nextAnalysis, duration, nextDuration, analysisState,
             )
         }
@@ -2910,6 +2951,14 @@ class CrossfadeController(
 
     /** Why the pair gets no loop mix, for the log and the stats line; null when it does. */
     private var loopRefusal: String? = null
+
+    /** The last [loopPlanFor] was a "not yet": analysis or lyrics still on their way, not a refusal. */
+    private var loopWaiting = false
+
+    /** A custom loop mix that could not be made, so it is not re-planned every tick: the pair, where the playhead was, why. */
+    private var customLoopFellKey: String? = null
+    private var customLoopFellAtMs = 0L
+    private var customLoopFellWhy: String? = null
     private var lastLoopVerdict = ""
     private var loopIncomingStarted = false
     private var lastLoopPositionMs = -1L
@@ -2973,9 +3022,12 @@ class CrossfadeController(
         durationMs: Long,
         nextDurationMs: Long,
         state: SmartAnalysis,
+        custom: LoopMix.Custom? = null,
     ): LoopMix.Plan? {
         val pair = "${current.mediaId}->${next.mediaId}"
+        loopWaiting = false
         loopRefusalFor(player, current, next, state)?.let { why ->
+            loopWaiting = why.startsWith("waiting")
             noteLoopVerdict(pair, null, why)
             return null
         }
@@ -2984,10 +3036,11 @@ class CrossfadeController(
         val outLyrics = lyricSpans[current.mediaId]
         val inLyrics = lyricSpans[next.mediaId]
         if (outLyrics == null || inLyrics == null) {
+            loopWaiting = true
             noteLoopVerdict(pair, null, "waiting on lyrics")
             return null
         }
-        val key = "$pair|${System.identityHashCode(currentAnalysis)}|${System.identityHashCode(nextAnalysis)}"
+        val key = "$pair|${System.identityHashCode(currentAnalysis)}|${System.identityHashCode(nextAnalysis)}|$custom"
         val cached = loopPlanned
         // Kept while its loop is still far enough ahead to set up; a seek past
         // that plans again from the new playhead.
@@ -3004,6 +3057,7 @@ class CrossfadeController(
             sungOut = outLyrics.spans,
             sungIn = inLyrics.spans,
             why = why,
+            custom = custom,
         )
         loopPlanKey = key
         loopPlanned = plan
@@ -3024,7 +3078,11 @@ class CrossfadeController(
     private fun describeLoop(plan: LoopMix.Plan): String {
         val from = plan.out.bpm.roundToInt()
         val to = plan.targetBpm.roundToInt()
-        val tempo = if (from == to) "$from BPM" else "$from → $to BPM over ${plan.rampBars} bars"
+        val tempo = when {
+            plan.holdTempo -> "$from BPM held, then $to"
+            from == to -> "$from BPM"
+            else -> "$from → $to BPM over ${plan.rampBars} bars"
+        }
         val fold = when {
             plan.fold > 1 -> " (next in double time)"
             plan.fold < 1 -> " (next in half time)"

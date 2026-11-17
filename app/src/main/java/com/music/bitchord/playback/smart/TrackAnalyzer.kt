@@ -1587,6 +1587,18 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         results[trackId]?.takeIf { it.isUsable } ?: store.load(trackId)?.takeIf { it.isUsable }
 
     /**
+     * Whether [trackId] has the whole-track analysis the loop mix is planned from: not the
+     * provisional result of its opening, and with the vocal mask and levels that say which
+     * bars are instrumental. Those come from playing the song through (or downloading it
+     * whole), never from the tempo-and-key pass Analyse playlist asks for. Reads a file when
+     * it has to.
+     */
+    fun hasWholeAnalysis(trackId: String): Boolean {
+        val whole = results[trackId]?.takeIf { trackId !in provisional } ?: store.load(trackId)
+        return whole != null && whole.isUsable && whole.vocalWindows.isNotEmpty() && whole.levelWindows.isNotEmpty()
+    }
+
+    /**
      * The editor's waveform and beat grid for one end of a song, without the
      * whole song (design doc 4.8): [WindowSide.TAIL] is its last 45 s, [WindowSide.HEAD]
      * its first. In order: what was saved with the song; the playback cache,

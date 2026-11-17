@@ -31,11 +31,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.bitchord.R
 import com.music.bitchord.data.CustomTransitionStore
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.durationMillis
 import com.music.bitchord.playback.smart.AnalysisBridge
+import com.music.bitchord.playback.smart.LoopMix
 import com.music.bitchord.playback.transitions.CustomTransition
 import com.music.bitchord.playback.transitions.MixStyle
 import com.music.bitchord.playback.transitions.MixWindow
@@ -55,7 +57,15 @@ import com.music.bitchord.playback.transitions.withBars
 import com.music.bitchord.playback.transitions.withMode
 import com.music.bitchord.playback.transitions.withSeconds
 import com.music.bitchord.ui.player.TransitionDeck
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+
+/** Preview of a loop mix starts this far ahead: the decks take a second to build and the lyrics a few to arrive. */
+private const val LOOP_PREVIEW_LEAD_SECONDS = 25.0
+
+/** What the loop option needs to know about the two songs: whether it can be planned at all, and their tempos. */
+private data class LoopInfo(val ready: Boolean = false, val outBpm: Double = 0.0, val inBpm: Double = 0.0)
 
 /** What one end of the editor knows about its song's window. */
 private sealed interface DeckState {
@@ -117,6 +127,19 @@ fun CustomTransitionEditor(
     val beats = tailWindow?.takeIf { it.hasTrustedGrid }?.beats.orEmpty()
     val beatSeconds = tailWindow?.takeIf { it.hasTrustedGrid }?.let { 60.0 / it.bpm } ?: 0.0
 
+    // The loop mix is planned from each song's whole-track analysis (the vocal mask), which the 45 s windows lack.
+    val analysisVersion by AnalysisBridge.version.collectAsStateWithLifecycle()
+    var loopInfo by remember { mutableStateOf(LoopInfo()) }
+    LaunchedEffect(outgoing.videoId, incoming.videoId, analysisVersion) {
+        loopInfo = withContext(Dispatchers.IO) {
+            LoopInfo(
+                ready = AnalysisBridge.hasLoopAnalysis(outgoing) && AnalysisBridge.hasLoopAnalysis(incoming),
+                outBpm = AnalysisBridge.traitsOf(outgoing)?.bpm ?: 0.0,
+                inBpm = AnalysisBridge.traitsOf(incoming)?.bpm ?: 0.0,
+            )
+        }
+    }
+
     var touched by remember { mutableStateOf(saved != null) }
     var draft by remember { mutableStateOf(saved ?: defaultTransition(outMs, inMs, 0.0)) }
     // Until the listener touches anything, the first draft follows what the song's end turns out to be.
@@ -135,7 +158,14 @@ fun CustomTransitionEditor(
     }
 
     val start = startSeconds(draft, duration)
-    val end = endSeconds(draft, duration, beatSeconds)
+    // A loop mix's length is the whole mix, which depends on the two tempos; the frame shows that.
+    val ramped = LoopMix.estimate(loopInfo.outBpm, loopInfo.inBpm, draft.loopBars, holdTempo = false)
+    val loopEstimate = if (draft.isLoopMix) {
+        LoopMix.estimate(loopInfo.outBpm, loopInfo.inBpm, draft.loopBars, holdTempo = !draft.loopRamp)
+    } else {
+        null
+    }
+    val end = if (loopEstimate != null) minOf(duration, start + loopEstimate.totalSeconds) else endSeconds(draft, duration, beatSeconds)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -203,6 +233,55 @@ fun CustomTransitionEditor(
                     onRegionStart = null,
                 )
 
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(stringResource(R.string.editor_loop), style = MaterialTheme.typography.titleMedium)
+                    Switch(
+                        checked = draft.loop,
+                        enabled = loopInfo.ready || draft.loop,
+                        onCheckedChange = { on -> edit { d -> d.copy(loop = on) } },
+                    )
+                }
+                if (!loopInfo.ready) {
+                    Text(stringResource(R.string.editor_loop_needs_play), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (draft.loop) {
+                    Text(stringResource(R.string.editor_loop_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.editor_loop_length), style = MaterialTheme.typography.labelLarge)
+                    val choices = CustomTransition.LOOP_BARS_CHOICES
+                    SegmentedControl(
+                        options = choices.map { if (it == 1) stringResource(R.string.mix_loop_one_bar) else stringResource(R.string.mix_bars, it) },
+                        selectedIndex = choices.indexOf(draft.loopBars).coerceAtLeast(0),
+                        onSelect = { edit { d -> d.copy(loopBars = choices[it]) } },
+                    )
+                    // Holding the tempo is only possible when the songs are close; further apart the ramp stays.
+                    val locked = ramped != null && ramped.gapBpm > LoopMix.HOLD_TEMPO_MAX_BPM
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(stringResource(R.string.editor_tempo_ramp), style = MaterialTheme.typography.bodyLarge)
+                        Switch(
+                            checked = draft.loopRamp || locked,
+                            enabled = !locked,
+                            onCheckedChange = { on -> edit { d -> d.copy(loopRamp = on) } },
+                        )
+                    }
+                    if (loopEstimate != null) {
+                        val from = loopInfo.outBpm.roundToInt()
+                        val to = loopEstimate.targetBpm.roundToInt()
+                        Text(
+                            when {
+                                locked -> stringResource(R.string.editor_ramp_locked, loopEstimate.gapBpm.roundToInt())
+                                loopEstimate.held -> stringResource(R.string.editor_ramp_off, from, to)
+                                else -> stringResource(R.string.editor_ramp_on, from, to, loopEstimate.rampBars)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (start + loopEstimate.handoverSeconds + LoopMix.OUT_END_GUARD_SEC > duration) {
+                            Text(stringResource(R.string.editor_loop_tight), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+
+                if (!draft.isLoopMix) {
                 Text(stringResource(R.string.editor_style), style = MaterialTheme.typography.labelLarge)
                 SegmentedControl(
                     options = MixStyle.entries.map { stringResource(styleLabel(it)) },
@@ -248,6 +327,7 @@ fun CustomTransitionEditor(
                         valueRange = 0.2f..1f,
                     )
                 }
+                }
             } else {
                 Text(
                     stringResource(if (draft.mode == CustomTransition.MODE_GAPLESS) R.string.editor_gapless_note else R.string.editor_no_mix_note),
@@ -271,7 +351,10 @@ fun CustomTransitionEditor(
                 Spacer(Modifier.weight(1f))
                 OutlinedButton(
                     onClick = {
-                        onPreview(finalDraft(draft, beatSeconds, outMs, inMs), previewStartSeconds(draft, duration))
+                        onPreview(
+                            finalDraft(draft, beatSeconds, outMs, inMs),
+                            previewStartSeconds(draft, duration, if (draft.isLoopMix) LOOP_PREVIEW_LEAD_SECONDS else 8.0),
+                        )
                         onDismiss()
                     },
                 ) { Text(stringResource(R.string.editor_preview)) }

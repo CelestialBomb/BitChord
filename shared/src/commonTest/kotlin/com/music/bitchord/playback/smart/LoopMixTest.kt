@@ -437,4 +437,26 @@ class LoopMixTest {
             assertTrue(handoverMargin(plan, 200.0) >= LoopMix.OUT_END_GUARD_SEC, "around $around")
         }
     }
+
+    @Test
+    fun theEstimateAgreesWithThePlanItStandsInFor() {
+        val plan = assertNotNull(plan(analysis(89.0, 200.0), analysis(120.0, 180.0)))
+        val estimate = assertNotNull(LoopMix.estimate(89.0, 120.0, LoopMix.LOOP_BARS, holdTempo = false))
+        assertEquals(plan.rampBars, estimate.rampBars)
+        assertEquals(plan.targetBpm, estimate.targetBpm, 1e-6)
+        assertEquals(LoopMix.Clock(plan).handoffAt, estimate.handoverSeconds, 1e-6)
+        assertEquals(LoopMix.Clock(plan).elementAt, estimate.totalSeconds, 1e-6)
+        assertEquals(false, estimate.held)
+    }
+
+    @Test
+    fun theEstimateHoldsOnlyWithinTheLimitAndFoldsDoubleTime() {
+        assertEquals(true, assertNotNull(LoopMix.estimate(120.0, 124.0, 2, holdTempo = true)).held)
+        assertEquals(false, assertNotNull(LoopMix.estimate(89.0, 120.0, 2, holdTempo = true)).held)
+        // 192 BPM against 96 is the same tempo twice over: no gap, nothing to ramp
+        val doubled = assertNotNull(LoopMix.estimate(96.0, 192.0, 4, holdTempo = false))
+        assertEquals(0.0, doubled.gapBpm, 1e-9)
+        assertNull(LoopMix.estimate(0.0, 120.0, 4, holdTempo = false))
+        assertNull(LoopMix.estimate(120.0, Double.NaN, 4, holdTempo = false))
+    }
 }
