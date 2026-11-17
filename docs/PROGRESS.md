@@ -22,7 +22,7 @@ backup must include custom transitions and Mix flags; the editor loads only the
 |---|---|
 | 1. `CustomTransition`, `applyCustomTransition`, fixtures 019-023 | **Done**, shared tests 187 pass |
 | 2. Store, Mix flag, backup section + round-trip test | **Done**, app tests 1249 pass (7 new) |
-| 3. Controller hook, high-pass exit, preview override | To do |
+| 3. Controller hook, high-pass exit, preview override | **Done**, app tests 1254 pass; no UI yet, so nothing to try on the phone |
 | 4. `MixWindowStore`, `WindowSource`, window loader | To do |
 | 5. Playlist UI (toggle, BPM/key, transition rows, Analyse playlist) | To do |
 | 6. Editor sheet and Preview | To do |
@@ -34,6 +34,16 @@ carries an optional `customTransitions` section (schema stays 1; older builds sk
 older files without it leave the store alone, an empty section clears it). Android
 auto-backup already includes every non-excluded preference file. Local playlists
 themselves are still not in the in-app backup (existing gap, unchanged).
+
+Step 3 notes: in `considerSmartTransition`, after the guards and the failure gate, a pair
+is custom only when both rows are `CONTEXT` tier and carry the same `playbackSourceId`
+(Play next, Add to queue and AutoPlay rows never are) and `CustomTransitionStore.effective`
+answers (saved + Mix on, or an editor preview for exactly that pair). It replaces the global
+style and length for the pair, skips the loop mix, and logs `custom=<mode/style/bars/filter>`
+(or `fallback`, with the `custom-fallback-*` code in the policy list). A failed pair gets no
+custom plan. The exit filter merges into `tracks.outgoing` (lowest low-pass, highest high-pass),
+so it adds to the style's own move. **Limit:** custom transitions run inside Automix, so they
+need Automix on; the editor should say so.
 
 Step 1 notes: reason codes `before-custom` / `custom`, `custom-gapless`,
 `custom-no-mix`; fallbacks are policy reasons on the planner's own plan

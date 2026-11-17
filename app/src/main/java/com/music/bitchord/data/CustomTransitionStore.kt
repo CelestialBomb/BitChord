@@ -61,6 +61,37 @@ object CustomTransitionStore {
         )
     }
 
+    /**
+     * What the controller plays for this pair: the editor's unsaved preview if it
+     * is for exactly this pair (Mix need not be on yet), otherwise the saved
+     * transition, and only while the playlist has Mix on.
+     */
+    fun effective(playlistId: String, outgoingId: String, incomingId: String): CustomTransition? {
+        preview?.let { p ->
+            if (p.key == customTransitionKey(playlistId, outgoingId, incomingId)) return p.transition
+        }
+        return if (isMixOn(playlistId)) get(playlistId, outgoingId, incomingId) else null
+    }
+
+    private class Preview(val key: String, val transition: CustomTransition)
+
+    @Volatile
+    private var preview: Preview? = null
+
+    /** Preview in the editor: [transition] stands in for this pair until it is used or [clearPreview] runs. Memory only. */
+    fun setPreview(playlistId: String, outgoingId: String, incomingId: String, transition: CustomTransition) {
+        preview = Preview(customTransitionKey(playlistId, outgoingId, incomingId), transition)
+    }
+
+    fun clearPreview() {
+        preview = null
+    }
+
+    /** Uses the preview up when the blend it was for begins; a blend for another pair leaves it. */
+    fun consumePreview(playlistId: String, outgoingId: String, incomingId: String) {
+        if (preview?.key == customTransitionKey(playlistId, outgoingId, incomingId)) preview = null
+    }
+
     /** Back to the automatic plan for this pair. */
     fun reset(playlistId: String, outgoingId: String, incomingId: String) = update { current ->
         current.copy(transitions = current.transitions - customTransitionKey(playlistId, outgoingId, incomingId))

@@ -525,7 +525,8 @@ private const val EXTRA_RADIO_NAME = "bitchord.radioName"
 /** @see Song.playbackSource */
 private const val EXTRA_PLAYBACK_SOURCE = "bitchord.playbackSource"
 private const val EXTRA_PLAYBACK_SOURCE_TYPE = "bitchord.playbackSourceType"
-private const val EXTRA_PLAYBACK_SOURCE_ID = "bitchord.playbackSourceId"
+/** Internal so [CrossfadeController] can tell which playlist a pair is playing from. */
+internal const val EXTRA_PLAYBACK_SOURCE_ID = "bitchord.playbackSourceId"
 
 /**
  * The artist and album pages this track hangs under, when they are known.

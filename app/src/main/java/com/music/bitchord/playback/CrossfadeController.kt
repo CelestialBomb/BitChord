@@ -26,6 +26,7 @@ import com.music.bitchord.playback.loopmix.LoopRegion
 import com.music.bitchord.playback.smart.CrossfadeMode
 import com.music.bitchord.playback.smart.LoopMix
 import com.music.bitchord.playback.smart.FILTER_ECHO_AT
+import com.music.bitchord.playback.smart.ExitFilter
 import com.music.bitchord.playback.smart.FilterTransitionVariant
 import com.music.bitchord.playback.smart.MixWaveform
 import com.music.bitchord.playback.smart.TrackAnalysis
@@ -35,12 +36,16 @@ import com.music.bitchord.playback.smart.TransitionTrackInfo
 import com.music.bitchord.playback.smart.echoTailSeconds
 import com.music.bitchord.playback.smart.planTransition
 import com.music.bitchord.playback.transitions.BeatAwareConfig
+import com.music.bitchord.data.CustomTransitionStore
+import com.music.bitchord.data.model.QueueTier
+import com.music.bitchord.playback.transitions.CustomTransition
 import com.music.bitchord.playback.transitions.SKIP_GIVE_UP_MS
 import com.music.bitchord.playback.transitions.SKIP_READY_WAIT_MS
 import com.music.bitchord.playback.transitions.SkipAction
 import com.music.bitchord.playback.transitions.SkipContext
 import com.music.bitchord.playback.transitions.SkipDecision
 import com.music.bitchord.playback.transitions.TransitionFailureLog
+import com.music.bitchord.playback.transitions.applyCustomTransition
 import com.music.bitchord.playback.transitions.applyMixStyle
 import com.music.bitchord.playback.transitions.decideSkip
 import com.music.bitchord.playback.transitions.skipFallback
@@ -436,6 +441,9 @@ class CrossfadeController(
          * listener asked for the next song, so the screen shows it at once.
          */
         handoffOverride: Float = -1f,
+        /** Custom transitions: a filter laid over the outgoing track's exit, and how far it closes (0..1). */
+        val exitFilter: ExitFilter = ExitFilter.NONE,
+        val exitFilterAmount: Double = 0.0,
     ) {
         private val grid = if (advanced && beats >= 2.0) beats else 0.0
         val clash = vocalOverlap.coerceIn(0.0, 1.0)
@@ -1084,6 +1092,11 @@ class CrossfadeController(
     private fun markActive(out: ExoPlayer, nextIndex: Int, kind: String) {
         activeOutId = out.currentMediaItem?.mediaId.orEmpty()
         activeInId = out.getMediaItemAt(nextIndex).mediaId
+        // An editor preview is for one blend: now that it has begun, it is used up.
+        out.currentMediaItem?.let { current ->
+            playlistIdOf(current, out.getMediaItemAt(nextIndex))
+                ?.let { CustomTransitionStore.consumePreview(it, current.mediaId, activeInId.orEmpty()) }
+        }
         failureNoted = false
         Log.d(TRANSITION_TAG, "start $kind $activePair at ${out.currentPosition}ms of ${out.duration}ms")
     }
@@ -1125,6 +1138,23 @@ class CrossfadeController(
      * What the failure record allows for [player]'s next transition, logged
      * once per pair and verdict. Null when there is no next song.
      */
+    /**
+     * The playlist both songs are playing from, or null: a pair is only custom
+     * when it plays back-to-back out of one playlist's own running order, never
+     * from Play next, Add to queue or AutoPlay (those rows are not CONTEXT).
+     */
+    private fun playlistIdOf(current: MediaItem, next: MediaItem): String? {
+        if (current.queueTier != QueueTier.CONTEXT || next.queueTier != QueueTier.CONTEXT) return null
+        val id = current.mediaMetadata.extras?.getString(EXTRA_PLAYBACK_SOURCE_ID)?.takeIf { it.isNotBlank() }
+        return id?.takeIf { it == next.mediaMetadata.extras?.getString(EXTRA_PLAYBACK_SOURCE_ID) }
+    }
+
+    /** What is saved (or being previewed) for this pair, or null; see [CustomTransitionStore.effective]. */
+    private fun customFor(current: MediaItem, next: MediaItem): CustomTransition? {
+        val playlistId = playlistIdOf(current, next) ?: return null
+        return CustomTransitionStore.effective(playlistId, current.mediaId, next.mediaId)
+    }
+
     private fun failureVerdict(player: ExoPlayer): TransitionFailureLog.Verdict? {
         val current = player.currentMediaItem?.mediaId ?: return null
         val nextIndex = player.nextMediaItemIndex
@@ -1481,19 +1511,41 @@ class CrossfadeController(
             strictConfidence = beatAware.strictConfidence,
             allowTempoStretch = beatAware.allowTempoStretch,
         )
+        // What the listener saved for this very pair in this playlist wins over
+        // the planner, after every guard above (and never for a pair that
+        // already failed). It replaces the global style and length for the pair.
+        // Where it no longer fits, [applyCustomTransition] hands the planner's
+        // own plan back with a fallback code.
+        val custom = if (plainOnly) null else customFor(currentItem, nextItem)
         // The listener's style and length, over the planner's choice. Only a
         // mix the planner chose is restyled; every fallback stays as planned.
         val mixStyle = AppSettings.automixStyle.value
         val blendLength = AppSettings.automixBlendLength.value
-        val plan = applyMixStyle(
-            plannerPlan, mixStyle, blendLength,
-            durationSeconds = duration / 1000.0,
-            currentTime = player.currentPosition / 1000.0,
-        )
+        val plan = if (custom != null) {
+            applyCustomTransition(
+                plannerPlan, custom, currentAnalysis,
+                durationSeconds = duration / 1000.0,
+                nextDurationSeconds = nextDuration / 1000.0,
+                currentTime = player.currentPosition / 1000.0,
+            )
+        } else {
+            applyMixStyle(
+                plannerPlan, mixStyle, blendLength,
+                durationSeconds = duration / 1000.0,
+                currentTime = player.currentPosition / 1000.0,
+            )
+        }
+        val customApplied = custom != null && plan.policyReasons.none { it.startsWith("custom-fallback") }
+        val customLabel = when {
+            custom == null -> "none"
+            !customApplied -> "fallback"
+            else -> "${custom.mode}/${custom.style}/${if (custom.mode == CustomTransition.MODE_MIX) "${custom.bars}bars" else "-"}" +
+                "/filter=${custom.filter}"
+        }
         // One line per distinct verdict rather than one per 250ms tick, so the
         // log says what the planner decided for this pair without burying it.
         val verdict = "${plan.reason}|${plan.transitionStyle}|fade=${plan.fadeMs}" +
-            "|style=${mixStyle.key}/${blendLength.key}" +
+            "|style=${mixStyle.key}/${blendLength.key}|custom=$customLabel" +
             (if (plan !== plannerPlan) "(planner ${plannerPlan.transitionStyle} ${plannerPlan.fadeMs}ms)" else "") +
             "|cue=${plan.incomingCueTime}|rate=${plan.incomingPlaybackRate}" +
             "|vocalOverlap=${"%.2f".format(Locale.ROOT, plan.vocalOverlap)}" +
@@ -1523,10 +1575,14 @@ class CrossfadeController(
         publishMixPreview(currentItem, nextItem, duration, nextDuration, currentAnalysis, nextAnalysis, analysisState, plan, advanced)
 
         // The loop mix first: a pair it can do never reaches the blend below.
-        val loop = if (plainOnly) {
+        val loop = if (plainOnly || customApplied) {
             loopPlanned = null
             loopPlanKey = null
-            noteLoopVerdict("${currentItem.mediaId}->${nextItem.mediaId}", null, "this pair failed before")
+            noteLoopVerdict(
+                "${currentItem.mediaId}->${nextItem.mediaId}",
+                null,
+                if (plainOnly) "this pair failed before" else "custom transition",
+            )
             null
         } else {
             loopPlanFor(
@@ -1681,6 +1737,8 @@ class CrossfadeController(
         beats = if (plan.beatSeconds > 0) plan.fadeSeconds / plan.beatSeconds else 0.0,
         lockPhase = plan.phaseLock,
         echoSeconds = plan.echoSeconds,
+        exitFilter = plan.exitFilter,
+        exitFilterAmount = plan.exitFilterAmount,
     )
 
     /**
@@ -3576,7 +3634,11 @@ class CrossfadeController(
 
         override fun outgoing(lowPassHz: Float, highPassHz: Float) {
             if (!aimOutgoing) return
-            if (handedOff) filters.outgoing(lowPassHz, highPassHz) else filters.incoming(lowPassHz, highPassHz)
+            outgoingAimed = true
+            // A custom exit filter closes further than the style's own move, never less.
+            val low = minOf(lowPassHz, exitLowHz)
+            val high = maxOf(highPassHz, exitHighHz)
+            if (handedOff) filters.outgoing(low, high) else filters.incoming(low, high)
         }
 
         override fun incomingLeadMs(): Long =
@@ -3602,6 +3664,13 @@ class CrossfadeController(
      */
     private var aimIncoming = true
     private var aimOutgoing = true
+
+    /** What a custom exit filter asks of the outgoing side at the current point; open when none. See [updateExitFilter]. */
+    private var exitLowHz = TransitionFilterProcessor.OPEN_HZ
+    private var exitHighHz = TransitionFilterProcessor.OFF_HZ
+
+    /** Whether the style aimed the outgoing filter during this [rideStyle] pass. */
+    private var outgoingAimed = false
 
     /**
      * Aims the incoming filter at [incomingAt] and the outgoing one at
@@ -3643,6 +3712,8 @@ class CrossfadeController(
      * locked: a pause parks the filter exactly where it parks the fade.
      */
     private fun rideStyle(progress: Float) {
+        outgoingAimed = false
+        updateExitFilter(progress)
         when (render.style) {
             TransitionStyle.DJ_FILTER -> when (render.filterVariant) {
                 FilterTransitionVariant.BASS_HANDOFF -> rideFallbackBassHandoff(progress)
@@ -3671,6 +3742,37 @@ class CrossfadeController(
             TransitionStyle.EQUAL_POWER -> rideVocalSeparation(progress)
         }
         if (render.echo) rideEchoOut(progress)
+        // A style that left the outgoing filter open (a plain fade) never called
+        // [tracks]; the listener's filter still has to be applied.
+        if (render.exitFilter != ExitFilter.NONE && aimOutgoing && !outgoingAimed) {
+            tracks.outgoing(TransitionFilterProcessor.OPEN_HZ, TransitionFilterProcessor.OFF_HZ)
+        }
+    }
+
+    /**
+     * The custom exit filter's share of the outgoing side at [progress]: a
+     * low-pass closing toward a floor, or a high-pass rising toward its ceiling,
+     * on the same shape as the filter sweep, scaled by the listener's amount.
+     * Merged with the style's own move in [tracks]; open when there is none.
+     */
+    private fun updateExitFilter(progress: Float) {
+        val amount = render.exitFilterAmount.coerceIn(0.0, 1.0)
+        val travel = progress.toDouble().coerceIn(0.0, 1.0).pow(FILTER_SWEEP_SHAPE)
+        exitLowHz = TransitionFilterProcessor.OPEN_HZ
+        exitHighHz = TransitionFilterProcessor.OFF_HZ
+        if (amount <= 0.0) return
+        when (render.exitFilter) {
+            ExitFilter.NONE -> Unit
+            ExitFilter.LOW_PASS -> {
+                val open = TransitionFilterProcessor.OPEN_HZ.toDouble()
+                exitLowHz = glide(open, glide(open, FILTER_FLOOR_HZ, amount), travel).toFloat()
+            }
+            ExitFilter.HIGH_PASS -> {
+                val off = TransitionFilterProcessor.OFF_HZ.toDouble()
+                val ceiling = glide(off, TransitionFilterProcessor.MAX_HIGH_PASS_HZ.toDouble(), amount)
+                exitHighHz = glide(off, ceiling, travel).toFloat()
+            }
+        }
     }
 
     /**
