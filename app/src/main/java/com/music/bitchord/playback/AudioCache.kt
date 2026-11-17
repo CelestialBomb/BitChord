@@ -14,6 +14,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import com.music.bitchord.playback.transitions.ByteRange
+import com.music.bitchord.playback.transitions.WindowFetchPlan
 import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
@@ -2188,6 +2190,49 @@ object AudioCache {
      * [CacheDataSource] to open against; only the key decides which bytes come
      * back.
      */
+    /**
+     * The length [videoId]'s pinned analysis copy is known to have, or 0. Read
+     * from the cache's own metadata, so asking costs no network.
+     */
+    fun knownLengthOf(videoId: String): Long {
+        if (!::cache.isInitialized) return 0L
+        return ContentMetadata.getContentLength(cache.getContentMetadata(videoId)).coerceAtLeast(0L)
+    }
+
+    /**
+     * Whether the cache already holds every byte [plan] needs of [videoId]'s
+     * pinned analysis copy: the container header and the window. The editor's
+     * window loader decodes straight from the cache when this is true.
+     */
+    fun windowCovered(videoId: String, plan: WindowFetchPlan): Boolean {
+        if (!::cache.isInitialized) return false
+        fun held(range: ByteRange) = cache.getCachedBytes(videoId, range.position, range.length) >= range.length
+        return held(plan.header) && held(plan.window)
+    }
+
+    /**
+     * Pulls just [plan]'s bytes of [videoId] into the cache, under the pinned key
+     * the opening fetch already uses, so a head window is often already there and
+     * what is fetched here serves playback and analysis too. Only the gaps cost
+     * anything ([CacheWriter]). Returns whether the cache covers the plan after.
+     *
+     * The stream's real length is recorded first: a bounded range does not
+     * store it, and the extractor cannot seek into a file whose size it does not
+     * know.
+     */
+    suspend fun fetchWindow(videoId: String, totalBytes: Long, plan: WindowFetchPlan): Boolean {
+        if (!::cache.isInitialized || upstreamFactory == null) return false
+        runCatching {
+            val mutations = ContentMetadataMutations()
+            ContentMetadataMutations.setContentLength(mutations, totalBytes)
+            cache.applyContentMetadataMutations(videoId, mutations)
+        }
+        val uri = Uri.parse(AutomixAnalysisSource.opusUri(videoId))
+        fetch(videoId, uri, plan.header.position, plan.header.length, pinKey = true)
+        fetch(videoId, uri, plan.window.position, plan.window.length, pinKey = true)
+        return windowCovered(videoId, plan)
+    }
+
     fun renditionDataSource(uri: Uri, rendition: Rendition): MediaDataSource =
         CacheMediaDataSource(
             CacheDataSource.Factory()

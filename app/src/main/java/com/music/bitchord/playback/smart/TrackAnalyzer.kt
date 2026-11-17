@@ -37,6 +37,16 @@ import com.music.bitchord.data.listentogether.ListenTogether
 import com.music.bitchord.data.model.SearchFilter
 import com.music.bitchord.data.model.SearchResult
 import com.music.bitchord.data.settings.AppSettings
+import com.music.bitchord.data.innertube.StreamResolver
+import com.music.bitchord.playback.transitions.CUSTOM_WINDOW_SECONDS
+import com.music.bitchord.playback.transitions.MixWindow
+import com.music.bitchord.playback.transitions.WINDOW_BYTE_BUDGET
+import com.music.bitchord.playback.transitions.WindowSide
+import com.music.bitchord.playback.transitions.WindowSource
+import com.music.bitchord.playback.transitions.decideWindowSource
+import com.music.bitchord.playback.transitions.extendBeats
+import com.music.bitchord.playback.transitions.planWindowFetch
+import com.music.bitchord.playback.transitions.toLevels
 import com.music.bitchord.data.settings.AutomixPerformanceMode
 import com.music.bitchord.data.sources.SourceResolver
 import com.music.bitchord.data.sources.TrackMatcher
@@ -46,11 +56,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToLong
 import java.util.Locale
 
 /**
@@ -1555,6 +1568,125 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         return bands
     }
 
+    /** What [mixWindow] answers: the window, or none and why. [source] says where it came from, or what stopped it. */
+    class WindowResult(val window: MixWindow?, val source: WindowSource, val reason: String)
+
+    private val windowStore = MixWindowStore({ context.filesDir })
+
+    /**
+     * The editor's waveform and beat grid for one end of a song, without the
+     * whole song (design doc 4.8): [WindowSide.TAIL] is its last 45 s, [WindowSide.HEAD]
+     * its first. In order: what was saved with the song; the playback cache,
+     * when it already holds the bytes (a played song, or the opening fetch); a
+     * fetch of only the container header and the window, which Wi-Fi only
+     * forbids on a metered connection. A window that decodes is saved for next time.
+     *
+     * A null window with [WindowSource.WAIT_FOR_WIFI] means nothing was tried;
+     * any other null is a failure, and the editor then offers the full download.
+     */
+    suspend fun mixWindow(
+        trackId: String,
+        uri: Uri,
+        durationSeconds: Double,
+        side: WindowSide,
+    ): WindowResult = withContext(Dispatchers.IO) { loadMixWindow(trackId, uri, durationSeconds, side) }
+
+    private suspend fun loadMixWindow(trackId: String, uri: Uri, durationSeconds: Double, side: WindowSide): WindowResult {
+        fun failed(source: WindowSource, why: String): WindowResult {
+            Log.d(TAG, "Mix window $trackId ${side.key}: $why")
+            return WindowResult(null, source, why)
+        }
+        if (trackId.isBlank() || !durationSeconds.isFinite() || durationSeconds <= 0) {
+            return failed(WindowSource.FETCH, "no duration")
+        }
+        val durationMs = (durationSeconds * 1000).roundToLong()
+        windowStore.load(trackId, side, durationMs)?.let {
+            return WindowResult(it, WindowSource.SAVED, "saved")
+        }
+        val analysisUri = if (uri.getQueryParameter("v") != null || uri.authority != "source") {
+            uri
+        } else {
+            sourceAnalysisUris[trackId] ?: return failed(WindowSource.FETCH, "no recording to read")
+        }
+
+        val began = SystemClock.elapsedRealtime()
+        var source = WindowSource.CACHE
+        val openSource: () -> MediaDataSource? = if (LocalAudioSource.isLocal(analysisUri)) {
+            { LocalAudioSource.open(resolver, analysisUri) }
+        } else {
+            val complete = chooseRendition(trackId, analysisUri, durationSeconds)
+            if (complete != null) {
+                { cache.renditionDataSource(analysisUri, complete) }
+            } else {
+                val videoId = analysisUri.getQueryParameter("v") ?: return failed(WindowSource.FETCH, "no stream id")
+                var total = cache.knownLengthOf(videoId)
+                var plan = if (total > 0) planWindowFetch(total, durationSeconds, side) else null
+                val decision = decideWindowSource(
+                    hasSaved = false,
+                    cacheCovers = plan != null && cache.windowCovered(videoId, plan),
+                    wifiOnly = AppSettings.wifiOnlyDownloads.value,
+                    metered = AppSettings.meteredConnection.value,
+                )
+                when (decision) {
+                    WindowSource.WAIT_FOR_WIFI -> return failed(WindowSource.WAIT_FOR_WIFI, "Wi-Fi only is on")
+                    WindowSource.FETCH -> {
+                        if (total <= 0) total = runCatching { StreamResolver.contentLength(videoId) }.getOrNull() ?: 0L
+                        plan = planWindowFetch(total, durationSeconds, side)
+                            ?: return failed(WindowSource.FETCH, "size unknown or over the ${WINDOW_BYTE_BUDGET / 1024} KB budget")
+                        if (!cache.fetchWindow(videoId, total, plan)) return failed(WindowSource.FETCH, "the window did not arrive")
+                        source = WindowSource.FETCH
+                    }
+                    else -> Unit
+                }
+                val rendition = AudioCache.Rendition(videoId, total, cachedPrefix = 0L)
+                ({ cache.renditionDataSource(analysisUri, rendition) })
+            }
+        }
+
+        val from = if (side == WindowSide.TAIL) max(0.0, durationSeconds - CUSTOM_WINDOW_SECONDS) else 0.0
+        val to = if (side == WindowSide.TAIL) durationSeconds else min(durationSeconds, CUSTOM_WINDOW_SECONDS)
+        val bins = ((to - from) * WINDOW_BINS_PER_SECOND).toInt().coerceAtLeast(16)
+        val bands = openSource()?.use { MixWaveform.build(it, from, to, bins) { stopped } }
+            ?: return failed(source, "the window would not decode")
+        // An extractor that could not seek reads from the top and runs out of the
+        // cached bytes, leaving a flat picture: a window that missed is a failure.
+        if (bands.decodedFrom < from - WINDOW_SEEK_TOLERANCE_SECONDS) {
+            return failed(
+                source,
+                "the decoder started at ${"%.1f".format(Locale.ROOT, bands.decodedFrom)}s, not near ${"%.1f".format(Locale.ROOT, from)}s",
+            )
+        }
+
+        // The tracker measures about 30 s at a time: the last (or first) of them, carried on at the same tempo.
+        val gridFrom = if (side == WindowSide.TAIL) max(0.0, durationSeconds - BeatTracker.WINDOW_SECONDS) else 0.0
+        val gridTo = min(durationSeconds, gridFrom + BeatTracker.WINDOW_SECONDS)
+        val grid = region(openSource, gridFrom, gridTo, features = null)?.grid
+        val beats = grid?.let { extendBeats(it.beats, it.beatInterval, from, to) }.orEmpty()
+        val window = MixWindow(
+            trackId = trackId,
+            side = side.key,
+            durationMs = durationMs,
+            fromSeconds = from,
+            toSeconds = to,
+            low = bands.low.toLevels(),
+            mid = bands.mid.toLevels(),
+            high = bands.high.toLevels(),
+            beats = beats,
+            downbeats = grid?.downbeats.orEmpty(),
+            bpm = grid?.bpm ?: 0.0,
+            beatConfidence = grid?.beatConfidence ?: 0.0,
+            extrapolated = grid != null && beats.size > grid.beats.size,
+        )
+        windowStore.save(window)
+        Log.d(
+            TAG,
+            "Mix window $trackId ${side.key} from ${source.name.lowercase()}: " +
+                "${"%.0f".format(Locale.ROOT, from)}-${"%.0f".format(Locale.ROOT, to)}s, " +
+                "${beats.size} beats at ${"%.0f".format(Locale.ROOT, window.bpm)} BPM, ${SystemClock.elapsedRealtime() - began}ms",
+        )
+        return WindowResult(window, source, "ok")
+    }
+
     fun release() {
         executor.shutdownNow()
         sourceResolutionScope.cancel()
@@ -1640,6 +1772,12 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
          * 160kbps, the middle of what the streams in play here run at.
          */
         const val ASSUMED_BYTES_PER_SECOND = 20_000.0
+
+        /** Waveform resolution of an editor window: bins per second of audio. */
+        const val WINDOW_BINS_PER_SECOND = 20.0
+
+        /** A window whose decode began further ahead of the ask than this did not seek, and is a failure. */
+        const val WINDOW_SEEK_TOLERANCE_SECONDS = 6.0
 
         /**
          * The least decoded audio a head-only tempo estimate is allowed to rest

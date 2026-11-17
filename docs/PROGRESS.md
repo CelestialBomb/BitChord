@@ -23,7 +23,7 @@ backup must include custom transitions and Mix flags; the editor loads only the
 | 1. `CustomTransition`, `applyCustomTransition`, fixtures 019-023 | **Done**, shared tests 187 pass |
 | 2. Store, Mix flag, backup section + round-trip test | **Done**, app tests 1249 pass (7 new) |
 | 3. Controller hook, high-pass exit, preview override | **Done**, app tests 1254 pass; no UI yet, so nothing to try on the phone |
-| 4. `MixWindowStore`, `WindowSource`, window loader | To do |
+| 4. `MixWindowStore`, window plan, window loader | **Done in code**, shared 208 / app 1255 pass; **not yet run against a real stream** (needs the editor, step 6) |
 | 5. Playlist UI (toggle, BPM/key, transition rows, Analyse playlist) | To do |
 | 6. Editor sheet and Preview | To do |
 | 7. Design doc 0.5 (both repos), push | To do |
@@ -51,6 +51,20 @@ previewing a pair clears that pair's failure record (`CustomTransitionStore.onPa
 A custom Gapless or No mix that applies to the pair (durations still match) is never held
 back by the record; a stale-duration one falls back to the automatic plan, which stays
 protected by it. Restoring a backup does not clear failures.
+
+Step 4 notes: the editor's waveforms and beat grids come from two 45 s windows, never a
+whole song. Pure parts in shared (`MixWindowPlan.kt`: byte plan with a 3 MB budget, the
+saved -> cache -> fetch -> Wi-Fi-wait decision, beat extension, snapping; `MixWindowStore`:
+one small JSON per song and side, 600 entries, dropped on a different cut or schema). App
+side: `TrackAnalyzer.mixWindow` reuses `MixWaveform.build` and `region()` (the existing
+decode + `BeatTracker` at any offset), and `AudioCache.fetchWindow` fetches only the header
+and the window under the pinned analysis key the opening fetch already uses (so a head
+window is usually already cached), recording the stream's real length so the extractor can
+seek. A decode that did not reach the window is a failure, never a flat picture. Wi-Fi only
+blocks a fetch on a metered or unknown connection but never cache or saved reads.
+**Risk to check first on the phone:** that the extractor seeks into a partly cached WebM
+(needs its seek index inside the 256 KB header fetch); the log line is `Mix window <id>
+<side> from <source>: ...` or the reason it failed.
 
 Step 1 notes: reason codes `before-custom` / `custom`, `custom-gapless`,
 `custom-no-mix`; fallbacks are policy reasons on the planner's own plan
