@@ -954,6 +954,7 @@ object AppSettings {
         prefs = context.getSharedPreferences("bitchord_settings", Context.MODE_PRIVATE)
         this.authStore = authStore
         com.music.bitchord.data.spotify.LocalPlaylistStore.init(context)
+        com.music.bitchord.data.CustomTransitionStore.init(context)
         com.music.bitchord.data.OfflinePlaylists.init(
             context,
             likedTitle = context.getString(com.music.bitchord.R.string.auto_liked),

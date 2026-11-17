@@ -3,8 +3,10 @@ package com.music.bitchord.data.stats
 import android.content.Context
 import android.net.Uri
 import com.music.bitchord.BuildConfig
+import com.music.bitchord.data.CustomTransitionStore
 import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.data.settings.SearchHistory
+import com.music.bitchord.playback.transitions.CustomTransitionSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -23,8 +25,9 @@ import java.time.format.DateTimeFormatter
  *
  * ## What is in it
  *
- * Every preference except credentials (see [AppSettings.exportPrefs]), and every
- * month of listening. Not the audio cache, the downloads or the artwork: those
+ * Every preference except credentials (see [AppSettings.exportPrefs]), every
+ * month of listening, and the custom transitions with the playlists that have
+ * Mix on ([CustomTransitionStore]). Not the audio cache, the downloads or the artwork: those
  * are megabytes that re-fetch themselves, and a backup that is mostly cache is
  * one nobody keeps.
  *
@@ -70,8 +73,9 @@ object Backup {
                     PrefValue.of(value)?.let { key to it }
                 }.toMap(),
                 listening = buckets,
+                customTransitions = CustomTransitionStore.snapshot.value,
             )
-            val text = json.encodeToString(BackupFile.serializer(), file)
+            val text = encode(file)
             context.contentResolver.openOutputStream(target, "wt")
                 ?.use { it.write(text.toByteArray()) }
                 ?: error("Couldn't open that file for writing")
@@ -92,7 +96,7 @@ object Backup {
             val text = context.contentResolver.openInputStream(source)
                 ?.use { it.readBytes().decodeToString() }
                 ?: error("Couldn't open that file")
-            val file = runCatching { json.decodeFromString(BackupFile.serializer(), text) }
+            val file = runCatching { decode(text) }
                 .getOrElse { error("That doesn't look like a BitChord backup") }
             require(file.app == APP_TAG) { "That backup is from another app" }
             require(file.version <= SCHEMA_VERSION) {
@@ -101,6 +105,7 @@ object Backup {
 
             ListeningStats.importAll(file.listening)
             AppSettings.importPrefs(file.settings.mapValues { it.value.decoded() })
+            restoreCustomTransitions(file)
             // Shares AppSettings' preference file, so it has already been
             // overwritten by the line above — it just doesn't know yet.
             SearchHistory.reload()
@@ -111,6 +116,23 @@ object Backup {
                 at = file.exportedAt,
             )
         }
+    }
+
+    /** The file's text, as [exportTo] writes it. Split out so it can be tested without a content resolver. */
+    internal fun encode(file: BackupFile): String = json.encodeToString(BackupFile.serializer(), file)
+
+    /** The inverse of [encode]. */
+    internal fun decode(text: String): BackupFile = json.decodeFromString(BackupFile.serializer(), text)
+
+    /**
+     * Custom transitions and the per-playlist Mix flags come back with the
+     * rest, replacing what is on the device like every other part of an
+     * import. A backup written before they existed has no such section and
+     * leaves them alone: absent means "this file says nothing about it", not
+     * "there were none". An empty section does replace them.
+     */
+    internal fun restoreCustomTransitions(file: BackupFile) {
+        file.customTransitions?.let(CustomTransitionStore::replaceAll)
     }
 
     /** What an import turned out to contain, for the line shown afterwards. */
@@ -139,6 +161,12 @@ object Backup {
         val exportedAt: String = "",
         val settings: Map<String, PrefValue> = emptyMap(),
         val listening: List<StoredBucket> = emptyList(),
+        /**
+         * Custom transitions and the playlists that have Mix on. Null in a file
+         * written before they existed; an older build reading a newer file skips
+         * it ([json] ignores unknown keys), so the schema version stays 1.
+         */
+        val customTransitions: CustomTransitionSnapshot? = null,
     )
 
     /** One preference, with the type it has to be restored as. */

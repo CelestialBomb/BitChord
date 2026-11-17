@@ -21,12 +21,19 @@ backup must include custom transitions and Mix flags; the editor loads only the
 | Step | Status |
 |---|---|
 | 1. `CustomTransition`, `applyCustomTransition`, fixtures 019-023 | **Done**, shared tests 187 pass |
-| 2. Store, Mix flag, backup section + round-trip test | To do |
+| 2. Store, Mix flag, backup section + round-trip test | **Done**, app tests 1249 pass (7 new) |
 | 3. Controller hook, high-pass exit, preview override | To do |
 | 4. `MixWindowStore`, `WindowSource`, window loader | To do |
 | 5. Playlist UI (toggle, BPM/key, transition rows, Analyse playlist) | To do |
 | 6. Editor sheet and Preview | To do |
 | 7. Design doc 0.5 (both repos), push | To do |
+
+Step 2 notes: backup checked first. The in-app export only wrote `bitchord_settings`
+and listening, so a store in its own preference file would have been left out; it now
+carries an optional `customTransitions` section (schema stays 1; older builds skip it,
+older files without it leave the store alone, an empty section clears it). Android
+auto-backup already includes every non-excluded preference file. Local playlists
+themselves are still not in the in-app backup (existing gap, unchanged).
 
 Step 1 notes: reason codes `before-custom` / `custom`, `custom-gapless`,
 `custom-no-mix`; fallbacks are policy reasons on the planner's own plan
