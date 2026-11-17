@@ -298,4 +298,49 @@ class CustomTransitionTest {
         assertTrue(!saved.matchesDurations(202.1, 180.0), "outgoing too different")
         assertTrue(!saved.matchesDurations(200.0, 177.9), "incoming too different")
     }
+
+    // ---- Loop mix ----------------------------------------------------------------------------
+
+    private fun loopMix(before: Double = 30.0, bars: Int = 2, ramp: Boolean = true) =
+        custom(before = before).copy(loop = true, loopBars = bars, loopRamp = ramp)
+
+    @Test
+    fun aLoopMixComesBackAsThePlannersPlanForTheControllerToLoop() {
+        val planner = planner()
+        val result = apply(loopMix())
+        assertTrue("custom-loop" in result.policyReasons)
+        assertEquals(planner.transitionStyle, result.transitionStyle)
+        assertClose(planner.transitionStart, result.transitionStart, "the planner's own timing")
+        assertEquals(planner.reason, result.reason)
+    }
+
+    @Test
+    fun aLoopMixStillNeedsTheSameDurations() {
+        val result = apply(loopMix(), out = 190.0)
+        assertTrue("custom-fallback-duration" in result.policyReasons)
+        assertTrue("custom-loop" !in result.policyReasons)
+    }
+
+    @Test
+    fun theLoopFieldsDefaultToOffSoOlderSavesAndBackupsStillLoad() {
+        val old = Json { ignoreUnknownKeys = true }.decodeFromString(
+            CustomTransition.serializer(),
+            """{"mode":"mix","style":"rise","bars":8}""",
+        )
+        assertEquals(false, old.loop)
+        assertEquals(4, old.loopBars)
+        assertEquals(true, old.loopRamp)
+        assertEquals(false, old.isLoopMix)
+        val saved = Json.encodeToString(CustomTransition.serializer(), loopMix(bars = 1, ramp = false))
+        val back = Json.decodeFromString(CustomTransition.serializer(), saved)
+        assertEquals(loopMix(bars = 1, ramp = false), back)
+        assertTrue(back.isLoopMix)
+    }
+
+    @Test
+    fun gaplessAndNoMixAreNeverLoopMixesEvenWithTheFlagSet() {
+        assertEquals(false, custom(mode = CustomTransition.MODE_GAPLESS).copy(loop = true).isLoopMix)
+        assertEquals(false, custom(mode = CustomTransition.MODE_NO_MIX).copy(loop = true).isLoopMix)
+        assertEquals("custom-gapless", apply(custom(mode = CustomTransition.MODE_GAPLESS).copy(loop = true), now = 199.7).reason)
+    }
 }

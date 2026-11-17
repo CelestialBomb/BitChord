@@ -48,6 +48,12 @@ object LoopMix {
     /** Loop lengths tried, longest first: a 1-bar instrumental loop beats a 4-bar one with a word in it. */
     private val LOOP_LENGTHS = intArrayOf(4, 2, 1)
 
+    /** A listener's own loop mix may start this many bars either side of the start they chose. */
+    const val CUSTOM_START_TOLERANCE_BARS = 2
+
+    /** The tempo may be held (no ramp) only when the two songs are within this many BPM of each other. */
+    const val HOLD_TEMPO_MAX_BPM = 8.0
+
     /** Bars the incoming loop takes to come in at the outgoing tempo. */
     const val ENTER_BARS = 4
 
@@ -141,6 +147,14 @@ object LoopMix {
         val beats: Int get() = bars * 4
     }
 
+    /**
+     * What a listener asked for in the editor (design doc 4.8): the loop's length on
+     * both sides, about where the outgoing loop should start, and whether to hold
+     * the outgoing tempo instead of ramping. The loops must still be instrumental
+     * and the handover must still land inside the song.
+     */
+    data class Custom(val bars: Int, val aroundOutSec: Double, val holdTempo: Boolean = false)
+
     data class Plan(
         val out: Pick,
         val inn: Pick,
@@ -151,6 +165,11 @@ object LoopMix {
         val exitBars: Int,
         /** Outgoing bars from the outgoing loop's start to the incoming loop's release. */
         val totalBars: Int,
+        /**
+         * The master tempo stays at the outgoing song's until the incoming loop lets go,
+         * then steps to its own. [rampBars] is then only the span of the gain crossfade.
+         */
+        val holdTempo: Boolean = false,
     ) {
         /** The tempo the ramp arrives at, in outgoing beats per minute. */
         val targetBpm: Double get() = inn.bpm / fold
@@ -181,6 +200,8 @@ object LoopMix {
         inVideo: Boolean = false,
         /** Filled with why there is no plan, when there isn't one. */
         why: StringBuilder? = null,
+        /** The listener's own choices; null for the automatic plan. */
+        custom: Custom? = null,
     ): Plan? {
         if (outVideo || inVideo) return null.also { why?.append("a music video") }
         val outGrid = constantGrid(out) ?: return null.also { why?.append("no grid on the outgoing song") }
@@ -190,12 +211,14 @@ object LoopMix {
 
         // incoming: the earliest instrumental loop in its opening
         val inEnd = min(IN_SEARCH_SEC + LOOP_BARS * inGrid.barSec, inDuration - 20)
+        val lengths = custom?.let { intArrayOf(it.bars) } ?: LOOP_LENGTHS
         val inPick = firstClean(
             candidates = { bars -> loopsBetween(inn.headBeats, inGrid, 0.0, inEnd, bars) },
             analysis = inn,
             sung = sungIn,
             beatSec = inGrid.beatSec,
             count = inCount,
+            lengths = lengths,
         )
 
         // outgoing: the latest instrumental loop whose handover still lands inside the
@@ -203,22 +226,35 @@ object LoopMix {
         // handover to check, and the plan fails on that side anyway.
         val outEnd = outDuration - 0.5
         val outFirst = max(earliestOutSec, outDuration - OUT_SEARCH_SEC)
+        val hold = custom?.holdTempo == true
         val outPick = firstClean(
-            candidates = { bars -> loopsBetween(out.tailBeats, outGrid, outFirst, outEnd, bars).asReversed() },
+            candidates = { bars ->
+                if (custom == null) {
+                    loopsBetween(out.tailBeats, outGrid, outFirst, outEnd, bars).asReversed()
+                } else {
+                    // the loop nearest where the listener put it, within a couple of bars
+                    val reach = CUSTOM_START_TOLERANCE_BARS * outGrid.barSec
+                    loopsBetween(out.tailBeats, outGrid, max(earliestOutSec, custom.aroundOutSec - reach), outEnd, bars)
+                        .filter { abs(it.start - custom.aroundOutSec) <= reach }
+                        .sortedBy { abs(it.start - custom.aroundOutSec) }
+                }
+            },
             analysis = out,
             sung = sungOut,
             beatSec = outGrid.beatSec,
             count = outCount,
+            lengths = lengths,
             accept = { clean ->
-                inPick == null || clean.start + Clock(assemble(clean, inPick)).handoffAt <= outDuration - OUT_END_GUARD_SEC
+                inPick == null ||
+                    clean.start + Clock(assemble(clean, inPick, hold)).handoffAt <= outDuration - OUT_END_GUARD_SEC
             },
         ) ?: return null.also { why?.append("outgoing: ")?.append(outCount) }
         if (inPick == null) return null.also { why?.append("incoming: ")?.append(inCount) }
-        return assemble(outPick, inPick)
+        return assemble(outPick, inPick, hold)
     }
 
     /** The plan for two chosen loops: the tempo ramp and the mix's length in bars follow from them. */
-    private fun assemble(outPick: Clean, inPick: Clean): Plan {
+    private fun assemble(outPick: Clean, inPick: Clean, holdTempo: Boolean = false): Plan {
         val outBeat = (outPick.end - outPick.start) / (outPick.bars * 4)
         val inBeat = (inPick.end - inPick.start) / (inPick.bars * 4)
         val outBpm = 60 / outBeat
@@ -226,7 +262,13 @@ object LoopMix {
 
         val fold = doubleArrayOf(1.0, 2.0, 0.5).minBy { abs(ln(inBpm / it / outBpm)) }
         val target = inBpm / fold
-        val rampBars = ceil(abs(target - outBpm) / MAX_BPM_PER_BAR).toInt().coerceIn(MIN_RAMP_BARS, MAX_RAMP_BARS)
+        // Holding the tempo is only for songs already close; further apart the ramp stays.
+        val hold = holdTempo && abs(target - outBpm) <= HOLD_TEMPO_MAX_BPM
+        val rampBars = if (hold) {
+            MIN_RAMP_BARS
+        } else {
+            ceil(abs(target - outBpm) / MAX_BPM_PER_BAR).toInt().coerceIn(MIN_RAMP_BARS, MAX_RAMP_BARS)
+        }
         // the incoming loop lets go only at its own loop boundary: round the mix up to whole incoming loops
         val inLoopOutBars = inPick.bars / fold
         val totalBars = (ceil((ENTER_BARS + rampBars + EXIT_BARS) / inLoopOutBars) * inLoopOutBars).roundToInt()
@@ -248,6 +290,7 @@ object LoopMix {
             rampBars = rampBars,
             exitBars = totalBars - ENTER_BARS - rampBars,
             totalBars = totalBars,
+            holdTempo = hold,
         )
     }
 
@@ -350,8 +393,9 @@ object LoopMix {
         count: Rejections,
         /** A loop that is clean may still be turned down for where it sits; counted as [Rejections.late]. */
         accept: (Clean) -> Boolean = { true },
+        lengths: IntArray = LOOP_LENGTHS,
     ): Clean? {
-        for (bars in LOOP_LENGTHS) {
+        for (bars in lengths) {
             val loops = candidates(bars)
             if (loops.isEmpty()) continue
             count.loops += loops.size
@@ -517,6 +561,7 @@ object LoopMix {
         /** Master tempo during outgoing beat [k]. */
         fun tempo(k: Int): Double = when {
             k < rampFrom -> plan.out.bpm
+            plan.holdTempo -> if (k < beats) plan.out.bpm else plan.targetBpm
             k >= rampTo -> plan.targetBpm
             else -> plan.out.bpm + (plan.targetBpm - plan.out.bpm) * (k - rampFrom + 0.5) / (rampTo - rampFrom)
         }

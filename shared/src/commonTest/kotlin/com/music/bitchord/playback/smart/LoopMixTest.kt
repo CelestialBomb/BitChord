@@ -360,4 +360,81 @@ class LoopMixTest {
         val plan = assertNotNull(plan(analysis(124.0, 200.0), analysis(124.0, 180.0)))
         assertTrue(plan.out.loopEnd > 190, "${plan.out.loopEnd}")
     }
+
+    // ---- A listener's own loop mix (design doc 4.8) ------------------------------------------
+
+    private fun customPlan(
+        out: TrackAnalysis,
+        inn: TrackAnalysis,
+        custom: LoopMix.Custom,
+        why: StringBuilder? = null,
+    ) = LoopMix.plan(out, out.duration, inn, inn.duration, 0.0, clear, clear, why = why, custom = custom)
+
+    @Test
+    fun aCustomLoopUsesOnlyTheChosenLengthOnBothSongs() {
+        for (bars in listOf(1, 2, 4)) {
+            val plan = assertNotNull(customPlan(analysis(120.0, 200.0), analysis(120.0, 180.0), LoopMix.Custom(bars, 160.0)))
+            assertEquals(bars, plan.out.bars)
+            assertEquals(bars, plan.inn.bars)
+        }
+    }
+
+    @Test
+    fun aCustomLoopStartsNearTheStartTheListenerChose() {
+        for (around in listOf(120.0, 150.0, 170.0)) {
+            val plan = assertNotNull(customPlan(analysis(120.0, 200.0), analysis(120.0, 180.0), LoopMix.Custom(2, around)))
+            val reach = LoopMix.CUSTOM_START_TOLERANCE_BARS * 60.0 / 120 * 4
+            assertTrue(abs(plan.out.loopStart - around) <= reach, "asked for $around, got ${plan.out.loopStart}")
+        }
+    }
+
+    @Test
+    fun noInstrumentalLoopNearTheChosenStartMeansNoLoopMixAndSaysWhy() {
+        // sung all the way through the last 100 s, and no lyrics to say otherwise
+        val out = analysis(120.0, 200.0, listOf(vocals(100.0, 200.0, 0.8f)))
+        val why = StringBuilder()
+        val plan = LoopMix.plan(
+            out, out.duration, analysis(120.0, 180.0), 180.0, 0.0, null, clear, why = why,
+            custom = LoopMix.Custom(2, 160.0),
+        )
+        assertNull(plan)
+        assertTrue("outgoing" in why, why.toString())
+    }
+
+    @Test
+    fun aCustomLoopThatCannotHandOverInsideTheSongIsTurnedDown() {
+        val why = StringBuilder()
+        // 188 s at 60 BPM into 69: the loop the listener put at 180 s would hand over after the file's end
+        assertNull(customPlan(analysis(60.0, 188.0), analysis(69.0, 200.0), LoopMix.Custom(1, 180.0), why))
+        assertTrue("too late" in why, why.toString())
+    }
+
+    @Test
+    fun holdingTheTempoKeepsTheOutgoingTempoUntilTheIncomingLoopLetsGo() {
+        val plan = assertNotNull(customPlan(analysis(120.0, 200.0), analysis(124.0, 180.0), LoopMix.Custom(4, 160.0, holdTempo = true)))
+        assertTrue(plan.holdTempo)
+        assertEquals(LoopMix.MIN_RAMP_BARS, plan.rampBars)
+        val clock = LoopMix.Clock(plan)
+        for (k in 0 until clock.beats) assertEquals(plan.out.bpm, clock.tempo(k), 1e-9, "beat $k")
+        assertEquals(plan.targetBpm, clock.tempo(clock.beats), 1e-9)
+        // the handover still falls inside the mix
+        assertTrue(clock.handoffAt in clock.enterEnd..clock.releaseAt)
+    }
+
+    @Test
+    fun holdingTheTempoIsRefusedWhenTheSongsAreFarApart() {
+        val ramp = assertNotNull(customPlan(analysis(89.0, 200.0), analysis(120.0, 180.0), LoopMix.Custom(4, 150.0, holdTempo = true)))
+        assertEquals(false, ramp.holdTempo)
+        assertTrue(ramp.rampBars > LoopMix.MIN_RAMP_BARS)
+        // and the automatic plan never holds
+        assertEquals(false, assertNotNull(plan(analysis(120.0, 200.0), analysis(124.0, 180.0))).holdTempo)
+    }
+
+    @Test
+    fun aCustomPlanStillHandsOverBeforeTheFileEnds() {
+        for (around in listOf(100.0, 140.0, 170.0, 185.0)) {
+            val plan = customPlan(analysis(89.0, 200.0), analysis(75.0, 180.0), LoopMix.Custom(2, around)) ?: continue
+            assertTrue(handoverMargin(plan, 200.0) >= LoopMix.OUT_END_GUARD_SEC, "around $around")
+        }
+    }
 }

@@ -48,8 +48,22 @@ data class CustomTransition(
     /** The two durations this was made against; a pair that no longer matches is not trusted. */
     val outDurationMs: Long = 0L,
     val inDurationMs: Long = 0L,
+    /**
+     * Use the loop mix (the DJ transition that loops an instrumental bar or four on each song): only for
+     * [MODE_MIX]. Style, length, bass swap and filter then do not apply, the loop mix has its own. The
+     * outgoing loop starts near [startBeforeEndSeconds]; the controller picks it, because choosing a loop
+     * that is truly instrumental needs the vocal mask and the lyrics.
+     */
+    val loop: Boolean = false,
+    /** 1, 2 or 4 bars: the loop's length on both songs. */
+    val loopBars: Int = 4,
+    /** Ramp the tempo from one song's to the other's (the automatic loop mix); off holds the outgoing tempo. */
+    val loopRamp: Boolean = true,
 ) {
     val mixStyle: MixStyle get() = MixStyle.fromKey(style)
+
+    /** A mix that is the loop mix. */
+    val isLoopMix: Boolean get() = mode == MODE_MIX && loop
 
     /** Gapless and No mix: they never mix, so no failure of a blend can be held against them. */
     val isModeOnly: Boolean get() = mode == MODE_GAPLESS || mode == MODE_NO_MIX
@@ -73,6 +87,9 @@ data class CustomTransition(
         const val FILTER_NONE = "none"
         const val FILTER_LOW_PASS = "low-pass"
         const val FILTER_HIGH_PASS = "high-pass"
+
+        /** The loop lengths the editor offers, in bars. */
+        val LOOP_BARS_CHOICES = listOf(1, 2, 4)
     }
 }
 
@@ -109,7 +126,15 @@ const val CUSTOM_LATE_SLACK_SECONDS = 0.5
  *  - `custom-fallback-window`: the blend would start before the last 45 s of
  *    the outgoing song, run past its end, or reach past the first 45 s of the
  *    incoming one;
- *  - `custom-fallback-late`: the playhead is already past the start.
+ *  - `custom-fallback-late`: the playhead is already past the start;
+ *  - `custom-fallback-loop`: a loop mix was asked for and could not be made
+ *    (no instrumental loop near the chosen start, none that hands over inside
+ *    the song, or no analysis). The controller adds this one, since only it
+ *    can plan the loop.
+ *
+ * A loop mix (`custom-loop` in the policy reasons) comes back as the planner's
+ * own plan: the loop itself is planned by the controller from the vocal mask
+ * and lyrics, which this pure rule cannot see.
  *
  * The caller runs this after every guard (Automix off, short or missing
  * durations, video, party, bit-perfect, the failure record), so custom
@@ -131,6 +156,8 @@ fun applyCustomTransition(
     if (!custom.matchesDurations(durationSeconds, nextDurationSeconds)) {
         return fallback("custom-fallback-duration")
     }
+
+    if (custom.isLoopMix) return planner.copy(policyReasons = planner.policyReasons + "custom-loop")
 
     when (custom.mode) {
         CustomTransition.MODE_NO_MIX -> return TransitionPlan(
