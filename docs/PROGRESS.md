@@ -25,7 +25,7 @@ backup must include custom transitions and Mix flags; the editor loads only the
 | 3. Controller hook, high-pass exit, preview override | **Done**, app tests 1254 pass; no UI yet, so nothing to try on the phone |
 | 4. `MixWindowStore`, window plan, window loader | **Done in code**, shared 208 / app 1255 pass; **not yet run against a real stream** (needs the editor, step 6) |
 | 5. Playlist UI (toggle, BPM/key, transition rows, Analyse playlist) | **Done in code**, app tests 1262 pass; app starts cleanly; **not yet looked at on screen** |
-| 6. Editor sheet and Preview | **Done in code**, shared 227 / app 1262 pass; **not yet used on the phone** (screen was locked), so the window loader has still not met a real stream |
+| 6. Editor sheet and Preview | **Done and checked on the phone** (17 Nov): layout, drag, Rise + High-pass, Preview, Save/reopen, Gapless, No mix, window fetch (head and tail). Shared 238 / app 1262 pass |
 | 7. Design doc 0.5 (both repos), push | To do |
 
 Step 2 notes: backup checked first. The in-app export only wrote `bitchord_settings`
@@ -101,6 +101,26 @@ filter=high-pass. Found and fixed: the played length differed from the drawn one
 now carries the beat the editor measured; also unlabeled slider, ticks drawn for an untrusted grid, grid
 wording. **Still to check:** Save and reopen, Gapless, No mix, the true fetch path (every pair so far
 came from cache; pick songs never played), then step 7 (design doc 0.5 in both repos, push).
+
+Step 6 phone results (17 Nov, over adb), all on the dev build:
+- Editor layout fits; Save/Preview are pinned below the scrolling controls (they had scrolled off).
+- Drag moves the frame and keeps its width; Rise + High-pass + Preview log `custom=mix/rise/8bars/filter=high-pass`;
+  Save then reopen restores style, length, filter and frame; the page line reads `Custom . Rise . 8 bars`.
+- Gapless Preview: `before-custom-gapless|GAPLESS|fade=120`, armed 4 s before the end, next song at 0.1 s (no gap).
+- No mix Preview: `custom-no-mix|fade=0`, nothing armed, the song ended and the queue advanced.
+- Window loader: a head window fetched fine; a TAIL window fetched but would not decode because Android's
+  Matroska extractor walks every cluster header of the file and cannot seek over unread bytes. Fixed by
+  `MatroskaWindow.stitch` (header + Info + Tracks + the tail's whole clusters as a small standalone WebM,
+  decoded from memory): 4.09 MB song -> 782 KB, seek landed at 212.961 s for 212.95 s, 97 beats. WebM only;
+  M4A/AAC streams fall back to the Try again / Download offer.
+- Fixed along the way: played length differed from the drawn one (now `CustomTransition.beatSeconds`);
+  Preview now plays a two-song queue of exactly the edited pair, since the playlist queue after the previewed
+  song did not match the page (a different next song each run).
+- Limits seen: custom transitions never apply on video rows (Automix skips them); a pair needs both songs
+  to be the ids the playlist plays. Test transitions I saved on the Elevator Music playlist (Rise, Gapless,
+  No mix) are still there: open the pair and tap Use automatic to clear them.
+- Open: why the playlist queue after a previewed song differs from the page order (not investigated; Preview
+  no longer depends on it, but a saved pair also only applies when the pair really is adjacent in the queue).
 
 Step 1 notes: reason codes `before-custom` / `custom`, `custom-gapless`,
 `custom-no-mix`; fallbacks are policy reasons on the planner's own plan

@@ -3393,13 +3393,19 @@ private fun BitChordApp(
                                     incoming = into,
                                     automixOn = AppSettings.smartFadeEnabled.value,
                                     onPreview = { draft, startSeconds ->
-                                        // Played for real: the draft stands in for this pair until its
-                                        // blend begins, then the playlist plays on from a few seconds before.
-                                        CustomTransitionStore.setPreview(page.browseId, out.videoId, into.videoId, draft)
-                                        val songs = (page.songs as? UiState.Success)?.data.orEmpty()
-                                        val index = songs.indexOfFirst { it.videoId == out.videoId }
-                                        if (index >= 0) {
-                                            playDetailSongs(songs, index)
+                                        // Played for real: the draft stands in for this pair until its blend
+                                        // begins. The queue is just this pair, stamped with the playlist as its
+                                        // source, so the edited pair is the one that plays whatever else the
+                                        // playlist holds (a song listed twice, a context that reorders).
+                                        if (ListenTogether.state.value.controlsLocked) {
+                                            refusedByHost()
+                                        } else {
+                                            CustomTransitionStore.setPreview(page.browseId, out.videoId, into.videoId, draft)
+                                            playFrom(
+                                                listOf(out, into).map(withAlbum),
+                                                0,
+                                                QueueSource(page.title, PlaybackSourceType.BROWSE, page.browseId),
+                                            )
                                             editorScope.launch {
                                                 repeat(40) {
                                                     delay(150)
