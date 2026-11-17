@@ -75,6 +75,7 @@ data class FixtureCustom(
     val style: String = "smooth",
     val bars: Int = 8,
     val seconds: Double = 8.0,
+    val beatSeconds: Double = 0.0,
     val startBeforeEndSeconds: Double = 16.0,
     val bassSwap: Boolean = false,
     val filter: String = "none",

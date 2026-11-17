@@ -319,7 +319,8 @@
     <string name="editor_end_of">End of %1$s</string>
     <string name="editor_start_of">Start of %1$s</string>
     <string name="editor_drag_hint">Drag to move where the mix starts. It snaps to the beat</string>
-    <string name="editor_no_grid">No beat grid found, so the start moves freely and lengths are in seconds</string>
+    <string name="editor_no_grid">No reliable beat grid found, so the start moves freely and lengths are in seconds</string>
+    <string name="editor_filter_amount">Amount</string>
     <string name="editor_style">Style</string>
     <string name="editor_length">Length</string>
     <string name="editor_bass_swap">Bass swap</string>

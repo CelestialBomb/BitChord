@@ -146,7 +146,7 @@ class TransitionFixturesTest {
             settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true),
             outgoing = track("a", 120.0),
             incoming = track("b", 120.0),
-            custom = FixtureCustom(style = "rise", bars = 8, startBeforeEndSeconds = 20.0, filter = "high-pass", filterAmount = 0.6),
+            custom = FixtureCustom(style = "rise", bars = 8, beatSeconds = 0.5, startBeforeEndSeconds = 20.0, filter = "high-pass", filterAmount = 0.6),
             androidOnly = true,
         ),
         "020-custom-quick-bass-swap" to FixtureCase(
@@ -154,7 +154,7 @@ class TransitionFixturesTest {
             settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true),
             outgoing = track("a", 120.0),
             incoming = track("b", 120.0),
-            custom = FixtureCustom(style = "quick", bars = 4, startBeforeEndSeconds = 30.0, bassSwap = true),
+            custom = FixtureCustom(style = "quick", bars = 4, beatSeconds = 0.5, startBeforeEndSeconds = 30.0, bassSwap = true),
             androidOnly = true,
         ),
         "021-custom-gapless" to FixtureCase(
@@ -207,6 +207,7 @@ class TransitionFixturesTest {
                     style = custom.style,
                     bars = custom.bars,
                     seconds = custom.seconds,
+                    beatSeconds = custom.beatSeconds,
                     startBeforeEndSeconds = custom.startBeforeEndSeconds,
                     bassSwap = custom.bassSwap,
                     filter = custom.filter,

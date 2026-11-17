@@ -11,6 +11,7 @@ import com.music.bitchord.playback.smart.echoTailSeconds
 import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Custom transitions (design doc section 4.8): what the listener saved for one
@@ -27,6 +28,13 @@ data class CustomTransition(
     val bars: Int = 8,
     /** Length in seconds when it has not. */
     val seconds: Double = 8.0,
+    /**
+     * One beat in seconds as the editor measured it when this was made, or 0 when
+     * it had no trusted grid. Bars are counted in this beat, never in whatever
+     * the analysis says at playback: the two can disagree (a song tracked at 192
+     * in one place and 97 in another), and the blend must be the one that was drawn.
+     */
+    val beatSeconds: Double = 0.0,
     /**
      * Where the blend starts, measured back from the end of the outgoing track,
      * so a duration that differs by a second between versions does not move it.
@@ -146,8 +154,9 @@ fun applyCustomTransition(
         }
     }
 
+    // The renderer lands its moves on the grid the analysis has; the length is what was drawn.
     val beat = trustedBeatSeconds(outgoing).takeIf { it > 0 } ?: planner.beatSeconds
-    val length = if (beat > 0) custom.bars * 4 * beat else custom.seconds
+    val length = if (custom.beatSeconds > 0) custom.bars * 4 * custom.beatSeconds else custom.seconds
     val start = durationSeconds - custom.startBeforeEndSeconds
     val end = start + length
     val ratio = planner.incomingPlaybackRate / planner.outgoingPlaybackRate.coerceAtLeast(0.01)
@@ -172,7 +181,7 @@ fun applyCustomTransition(
         transitionEnd = end,
         fadeSeconds = length,
         beatSeconds = beat,
-        transitionBeats = if (beat > 0) custom.bars * 4 else 0,
+        transitionBeats = if (beat > 0) (length / beat).roundToInt() else 0,
         exitFilter = custom.exitFilter,
         exitFilterAmount = if (custom.exitFilter == ExitFilter.NONE) 0.0 else custom.filterAmount.coerceIn(0.0, 1.0),
         policyReasons = planner.policyReasons + "custom",

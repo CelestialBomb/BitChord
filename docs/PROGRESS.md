@@ -94,6 +94,14 @@ draft is one `applyCustomTransition` applies).
 (or why it failed); that dragging snaps and the frame stays on screen; that Preview starts
 ~8 s before and the blend plays (log `plan ... custom=mix/...`).
 
+Step 6 phone check (17 Nov, over adb): editor opens, both windows decode from cache (62-106 beats),
+drag moves the frame and keeps its width, Rise + High-pass + Preview play and log custom=mix/rise/8bars/
+filter=high-pass. Found and fixed: the played length differed from the drawn one (editor 8 s, playback
+10 s, because the analysis tempo said 192 while the window said 97), so `CustomTransition.beatSeconds`
+now carries the beat the editor measured; also unlabeled slider, ticks drawn for an untrusted grid, grid
+wording. **Still to check:** Save and reopen, Gapless, No mix, the true fetch path (every pair so far
+came from cache; pick songs never played), then step 7 (design doc 0.5 in both repos, push).
+
 Step 1 notes: reason codes `before-custom` / `custom`, `custom-gapless`,
 `custom-no-mix`; fallbacks are policy reasons on the planner's own plan
 (`custom-fallback-duration`, `-window`, `-late`). `TransitionPlan` gained

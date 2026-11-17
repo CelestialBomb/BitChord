@@ -113,7 +113,8 @@ fun CustomTransitionEditor(
     val head = rememberDeck(incoming, WindowSide.HEAD, attempt)
     val tailWindow = (tail as? DeckState.Ready)?.window
     val headWindow = (head as? DeckState.Ready)?.window
-    val beats = tailWindow?.beats.orEmpty()
+    // Beats count only when the grid can be trusted; an unreliable one is neither drawn nor snapped to.
+    val beats = tailWindow?.takeIf { it.hasTrustedGrid }?.beats.orEmpty()
     val beatSeconds = tailWindow?.takeIf { it.hasTrustedGrid }?.let { 60.0 / it.bpm } ?: 0.0
 
     var touched by remember { mutableStateOf(saved != null) }
@@ -196,7 +197,7 @@ fun CustomTransitionEditor(
                     high = headWindow?.high?.toPeaks() ?: FloatArray(0),
                     fromSeconds = headWindow?.fromSeconds ?: 0.0,
                     toSeconds = headWindow?.toSeconds ?: 45.0,
-                    beats = headWindow?.beats.orEmpty(),
+                    beats = headWindow?.takeIf { it.hasTrustedGrid }?.beats.orEmpty(),
                     regionStart = null,
                     regionEnd = null,
                     onRegionStart = null,
@@ -240,6 +241,7 @@ fun CustomTransitionEditor(
                     onSelect = { edit { d -> d.copy(filter = filters[it]) } },
                 )
                 if (draft.filter != CustomTransition.FILTER_NONE) {
+                    Text(stringResource(R.string.editor_filter_amount), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Slider(
                         value = draft.filterAmount.toFloat(),
                         onValueChange = { v -> edit { d -> d.copy(filterAmount = v.toDouble()) } },
@@ -286,7 +288,7 @@ fun CustomTransitionEditor(
  */
 private fun finalDraft(draft: CustomTransition, beatSeconds: Double, outMs: Long, inMs: Long): CustomTransition =
     draft.madeFor(outMs, inMs).let { d ->
-        if (beatSeconds > 0) d.copy(seconds = blendLengthSeconds(d, beatSeconds)) else d
+        if (beatSeconds > 0) d.copy(seconds = blendLengthSeconds(d, beatSeconds), beatSeconds = beatSeconds) else d.copy(beatSeconds = 0.0)
     }
 
 private fun styleLabel(style: MixStyle): Int = when (style) {

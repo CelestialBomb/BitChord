@@ -78,6 +78,7 @@ class CustomTransitionTest {
         mode = mode,
         style = style.key,
         bars = bars,
+        beatSeconds = 0.5,
         startBeforeEndSeconds = before,
         bassSwap = bassSwap,
         filter = filter,
@@ -154,7 +155,7 @@ class CustomTransitionTest {
     fun withoutAGridTheLengthIsInSeconds() {
         val bare = TrackAnalysis()
         val plan = TransitionPlan(transitionStyle = TransitionStyle.EQUAL_POWER, fadeSeconds = 8.0)
-        val saved = custom(before = 20.0).copy(seconds = 12.0)
+        val saved = custom(before = 20.0).copy(seconds = 12.0, beatSeconds = 0.0)
         val result = applyCustomTransition(plan, saved, bare, duration, 200.0, 10.0)
         assertClose(12.0, result.fadeSeconds, "seconds")
         assertEquals(0, result.transitionBeats)
@@ -261,6 +262,26 @@ class CustomTransitionTest {
         assertEquals("PL|a->b", customTransitionKey("PL", "a", "b"))
         assertTrue(customTransitionKey("PL", "a", "b") != customTransitionKey("PL", "b", "a"))
         assertTrue(customTransitionKey("PL1", "a", "b") != customTransitionKey("PL2", "a", "b"))
+    }
+
+    @Test
+    fun theDrawnLengthWinsOverWhateverTheAnalysisSaysAtPlayback() {
+        // The song's analysis says 192 BPM (beat 0.3125 s) while the editor measured 97 BPM
+        // (0.6186 s): 8 bars must be the 19.8 s that was drawn, not 10 s.
+        val analysis = track("a", 192.0)
+        val saved = custom(bars = 8, before = 30.0).copy(beatSeconds = 60.0 / 97.0)
+        val planner = TransitionPlan(transitionStyle = TransitionStyle.DJ_BLEND, fadeSeconds = 20.0, beatSeconds = 0.3125)
+        val result = applyCustomTransition(planner, saved, analysis, duration, 200.0, 10.0)
+        assertClose(8 * 4 * 60.0 / 97.0, result.fadeSeconds, "length as drawn")
+        assertClose(170.0, result.transitionStart, "start as drawn")
+        assertClose(0.3125, result.beatSeconds, "the renderer still lands on the analysis grid")
+    }
+
+    @Test
+    fun aDraftSavedWithoutAGridPlaysInSecondsEvenIfAGridAppearsLater() {
+        val saved = custom(bars = 8, before = 20.0).copy(beatSeconds = 0.0, seconds = 8.0)
+        val result = applyCustomTransition(planner(), saved, outgoing, duration, 200.0, 10.0)
+        assertClose(8.0, result.fadeSeconds, "seconds, not 8 bars of the analysis beat")
     }
 
     @Test
