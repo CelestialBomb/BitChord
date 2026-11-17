@@ -122,6 +122,18 @@ Step 6 phone results (17 Nov, over adb), all on the dev build:
 - Open: why the playlist queue after a previewed song differs from the page order (not investigated; Preview
   no longer depends on it, but a saved pair also only applies when the pair really is adjacent in the queue).
 
+Queue and real-playback checks (17 Nov, over adb):
+- Queue vs page: with shuffle off, the Elevator Music queue matches the page order exactly (Play and tapping a row). The earlier
+  mismatch was the app's shuffle, which was saved as ON on the phone; it reorders the queue and leaves ExoPlayer's flag false.
+  Not a bug in our code. The queue holds 26 songs of the 46 (a bounded window), also unchanged by us. Math Rock (no videos) matched too.
+- The Mix header now says so when shuffle is on (saved pairs only apply when the two songs really are adjacent).
+- The `queue ahead` log line lists the next 14 songs with shuffle state, tier (C) and video (V) flags.
+- Real playback: a saved Rise pair (Flamingo -> Hot Milk) played as `custom` with DJ_FILTER, 21.7 s, not just in Preview;
+  the next pair, with nothing saved, logged `custom=none`.
+- Preview of Goodbye To A World -> Flamingo (Rise + High-pass, 8 s): starts at 311.0 s, blend at 318.8 s (7.8 s lead),
+  lasts 8 s, handoff, finish. Gapless: handoff at 328.46 s of 328.52 s, next song at 0 ms, fade 120 ms (no gap).
+- Not visible in logs: the volume and filter ramp values (needs ears).
+
 Step 1 notes: reason codes `before-custom` / `custom`, `custom-gapless`,
 `custom-no-mix`; fallbacks are policy reasons on the planner's own plan
 (`custom-fallback-duration`, `-window`, `-late`). `TransitionPlan` gained

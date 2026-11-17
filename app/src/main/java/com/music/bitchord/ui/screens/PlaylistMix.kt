@@ -70,6 +70,8 @@ fun traitsLine(traits: AnalysisBridge.Traits?, bpmFormat: (Int) -> String): Stri
 class PlaylistMixState(
     val enabled: Boolean,
     val automixOn: Boolean,
+    /** The app's shuffle is on: songs rarely come in the playlist's order, so saved pairs rarely play. */
+    val shuffleOn: Boolean,
     val onToggle: (Boolean) -> Unit,
     val traitsLine: (Song) -> String?,
     val summary: (Song, Song) -> TransitionSummary,
@@ -91,6 +93,7 @@ fun rememberPlaylistMix(
     val snapshot by CustomTransitionStore.snapshot.collectAsStateWithLifecycle()
     val version by AnalysisBridge.version.collectAsStateWithLifecycle()
     val automixOn by AppSettings.smartFadeEnabled.collectAsStateWithLifecycle()
+    val shuffleOn by AppSettings.shuffleEnabled.collectAsStateWithLifecycle()
     val songs = (page.songs as? UiState.Success)?.data.orEmpty()
     val enabled = CustomTransitionStore.playlistKey(page.browseId) in snapshot.mixPlaylists
 
@@ -114,6 +117,7 @@ fun rememberPlaylistMix(
     return PlaylistMixState(
         enabled = enabled,
         automixOn = automixOn,
+        shuffleOn = shuffleOn,
         onToggle = { CustomTransitionStore.setMix(page.browseId, it) },
         traitsLine = { song -> traitsLine(traits[song.videoId]) { context.getString(R.string.mix_bpm, it) } },
         summary = { out, into ->
@@ -163,6 +167,14 @@ fun MixHeaderRow(mix: PlaylistMixState, palette: ArtworkPalette, modifier: Modif
             if (!mix.automixOn) {
                 Text(
                     stringResource(R.string.mix_needs_automix),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.onBackgroundVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            if (mix.shuffleOn) {
+                Text(
+                    stringResource(R.string.mix_shuffle_note),
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.onBackgroundVariant,
                     modifier = Modifier.padding(top = 4.dp),

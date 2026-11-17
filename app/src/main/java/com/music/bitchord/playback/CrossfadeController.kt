@@ -1068,6 +1068,17 @@ class CrossfadeController(
         if (nextKey == lastQueuePair) return
         Log.d(TRANSITION_TAG, "queue changed: next pair ${lastQueuePair ?: "none"} -> ${nextKey ?: "none"} (phase=$phase)")
         lastQueuePair = nextKey
+        // What is coming, in order: the quickest way to see why a pair did or did not happen.
+        val ahead = (player.currentMediaItemIndex until minOf(player.mediaItemCount, player.currentMediaItemIndex + QUEUE_AHEAD_LOGGED))
+            .joinToString(" | ") { index ->
+                val item = player.getMediaItemAt(index)
+                "${item.mediaMetadata.title}[${item.queueTier.name.take(1)}${if (item.isVideoOrigin) "V" else ""}]"
+            }
+        // The app's own shuffle (the Mix button) reorders the queue without ExoPlayer's flag, which stays false.
+        Log.d(
+            TRANSITION_TAG,
+            "queue ahead (shuffle=${AppSettings.shuffleEnabled.value}, exo=${player.shuffleModeEnabled}, ${player.mediaItemCount} items): $ahead",
+        )
         if (phase == Phase.IDLE || phase == Phase.ARMING || phase == Phase.LOOP_ARMING) {
             if (phase != Phase.IDLE) bailByListener("next song changed while arming")
             dropPlannedState("queue changed")
@@ -4468,6 +4479,9 @@ class CrossfadeController(
 
         /** Ramp used when a fade is interrupted. Also the cut a skip during any blend gets (design doc 4.4). */
         const val BAIL_MS = 120L
+
+        /** How many upcoming songs the queue log line names. */
+        const val QUEUE_AHEAD_LOGGED = 14
 
         /** A skip blend may start this much ahead of its beat: the arming tick is 40 ms. */
         const val SKIP_BEAT_EARLY_MS = 20.0

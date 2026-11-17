@@ -302,6 +302,7 @@
     <string name="mix_title">Mix</string>
     <string name="mix_subtitle">Custom transitions between the songs of this playlist</string>
     <string name="mix_needs_automix">Custom transitions play while Automix is on</string>
+    <string name="mix_shuffle_note">Shuffle is on, so songs rarely play in this order and these transitions will seldom be used</string>
     <string name="mix_analyse">Analyse playlist</string>
     <string name="mix_analysing">Analysing…</string>
     <string name="mix_analysed">Analysed %1$d of %2$d songs</string>
