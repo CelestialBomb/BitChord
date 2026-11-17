@@ -36,7 +36,6 @@ import com.music.bitchord.playback.smart.echoTailSeconds
 import com.music.bitchord.playback.smart.planTransition
 import com.music.bitchord.playback.transitions.BeatAwareConfig
 import com.music.bitchord.playback.transitions.SKIP_GIVE_UP_MS
-import com.music.bitchord.playback.transitions.SKIP_RAPID_MS
 import com.music.bitchord.playback.transitions.SKIP_READY_WAIT_MS
 import com.music.bitchord.playback.transitions.SkipAction
 import com.music.bitchord.playback.transitions.SkipContext
@@ -873,11 +872,12 @@ class CrossfadeController(
         val nextIndex = player.nextMediaItemIndex
         val next = if (nextIndex == C.INDEX_UNSET) null else player.getMediaItemAt(nextIndex)
         val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L
+        val guard = externalGuard ?: skipGuard(player, current, next)
         val decision = decideSkip(
             SkipContext(
                 enabled = AppSettings.mixOnSkip.value,
                 automix = AppSettings.smartFadeEnabled.value,
-                guard = externalGuard ?: skipGuard(player, current, next),
+                guard = guard,
                 transitioning = phase != Phase.IDLE,
                 msSinceLastSkip = since,
                 positionSeconds = player.currentPosition / 1000.0,
@@ -894,7 +894,7 @@ class CrossfadeController(
             TRANSITION_TAG,
             "skip ${decision.reason} $pair at ${player.currentPosition}ms" +
                 (if (decision.action == SkipAction.CUT) {
-                    " (phase=$phase${externalGuard?.let { ", $it" } ?: skipGuard(player, current, next)?.let { ", $it" } ?: ""})"
+                    " (phase=$phase${guard?.let { ", $it" } ?: ""})"
                 } else {
                     ": fade=${decision.fadeMs}ms wait=${decision.startDelayMs}ms cue=${decision.incomingCueMs}ms " +
                         "style=${decision.transitionStyle}/${decision.filterVariant} echo=${decision.echoSeconds} beat=${decision.beatSeconds}"
@@ -934,7 +934,7 @@ class CrossfadeController(
     /** When the skip in flight was pressed, from [SystemClock.elapsedRealtime]. */
     private var skipPressedAt = 0L
 
-    /** The last forward skip, for [SKIP_RAPID_MS]; 0 when there has been none. */
+    /** The last forward skip, for the rapid-skip rule; 0 when there has been none. */
     private var lastForwardSkipAt = 0L
 
     /**
@@ -958,8 +958,6 @@ class CrossfadeController(
             Log.d(TRANSITION_TAG, "skip blend could not arm; skipping plainly")
             return false
         }
-        // Mix on skip keeps its own clock: see [driveSkipArming].
-        armDeadline = skipPressedAt + SKIP_GIVE_UP_MS
         return true
     }
 
@@ -1101,9 +1099,14 @@ class CrossfadeController(
         }
     }
 
-    /** A failure the listener didn't cause: remembered so the pair isn't retried blindly. */
+    /**
+     * A failure the listener didn't cause: remembered so the pair isn't retried
+     * blindly. Never reached from [bailByListener]: its callers are the
+     * failure paths ([failAndBail]) and [loopBail] when the stop was not the
+     * listener's.
+     */
     private fun noteFailure(what: String) {
-        if (bailIsListener || failureNoted) return
+        if (failureNoted) return
         val out = activeOutId ?: return
         val into = activeInId ?: return
         failureNoted = true

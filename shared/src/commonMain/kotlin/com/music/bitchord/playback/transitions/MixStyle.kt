@@ -139,7 +139,7 @@ fun applyMixStyle(
 }
 
 /** The styled overlap in seconds; see [applyMixStyle] for the rules. */
-internal fun styledLength(plan: TransitionPlan, style: MixStyle, length: BlendLength, durationSeconds: Double): Double {
+private fun styledLength(plan: TransitionPlan, style: MixStyle, length: BlendLength, durationSeconds: Double): Double {
     val bar = if (plan.beatSeconds > 0) plan.beatSeconds * 4 else 0.0
     // Medium is the planner's own length, to the millisecond: an adaptive
     // blend need not be whole bars, and rounding it would move it for nothing.

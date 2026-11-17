@@ -153,7 +153,7 @@ fun skipFallback(decision: SkipDecision): SkipDecision = decision.copy(
 )
 
 /** One beat of [analysis]'s grid when it can be trusted, otherwise 0. */
-internal fun trustedBeatSeconds(analysis: TrackAnalysis): Double {
+private fun trustedBeatSeconds(analysis: TrackAnalysis): Double {
     if (!analysis.isUsable || analysis.beatConfidence < SKIP_MIN_BEAT_CONFIDENCE) return 0.0
     if (analysis.bpm !in 40.0..220.0) return 0.0
     val fromTempo = 60.0 / analysis.bpm
@@ -163,7 +163,7 @@ internal fun trustedBeatSeconds(analysis: TrackAnalysis): Double {
 }
 
 /** Seconds to the next beat after [position], or 0 when that is more than [SKIP_MAX_BEAT_WAIT_SECONDS] away. */
-internal fun nextBeatDelay(analysis: TrackAnalysis, beat: Double, position: Double): Double {
+private fun nextBeatDelay(analysis: TrackAnalysis, beat: Double, position: Double): Double {
     val anchor = analysis.downbeats.lastOrNull { it <= position } ?: analysis.firstBeat
     val beatsPast = (position - anchor) / beat
     val next = anchor + ceil(beatsPast - 1e-9) * beat
@@ -172,7 +172,7 @@ internal fun nextBeatDelay(analysis: TrackAnalysis, beat: Double, position: Doub
 }
 
 /** After the incoming track's silent intro, never more than [SKIP_MAX_CUE_SHARE] into it; 0 without analysis. */
-internal fun entryCue(incoming: TrackAnalysis, durationSeconds: Double): Double {
+private fun entryCue(incoming: TrackAnalysis, durationSeconds: Double): Double {
     if (!incoming.isUsable) return 0.0
     val duration = durationSeconds.takeIf { it > 0 } ?: incoming.duration
     if (duration <= 0) return 0.0

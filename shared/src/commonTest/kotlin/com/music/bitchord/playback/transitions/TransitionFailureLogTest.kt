@@ -2,7 +2,6 @@ package com.music.bitchord.playback.transitions
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class TransitionFailureLogTest {
     private val log = TransitionFailureLog()
@@ -56,13 +55,7 @@ class TransitionFailureLogTest {
         assertEquals(TransitionFailureLog.Verdict.NORMAL, log.verdict(out, "c"))
         assertEquals(TransitionFailureLog.Verdict.PLAIN_CROSSFADE, log.verdict("a", "b->c"))
         log.clearFor("b->c")
-        assertTrue(log.isEmpty)
-    }
-
-    @Test
-    fun clearEmptiesEverything() {
-        log.recordFailure("a", "b")
-        log.clear()
-        assertTrue(log.isEmpty)
+        assertEquals(TransitionFailureLog.Verdict.NORMAL, log.verdict("a", "b->c"))
+        assertEquals(0, log.failureCount("a", "b->c"))
     }
 }

@@ -322,7 +322,7 @@ private fun fallbackVariantFor(
  * lands two album siblings back to back is a mix, and gets mixed; the caller
  * decides which of those it is via `albumSequential` and says so explicitly.
  */
-internal fun sameAlbum(left: TransitionTrackInfo?, right: TransitionTrackInfo?): Boolean {
+private fun sameAlbum(left: TransitionTrackInfo?, right: TransitionTrackInfo?): Boolean {
     if (left == null || right == null) return false
     // An album ID on both sides is the answer: equal is the same release,
     // different is two releases that may well share a title ("Greatest Hits").

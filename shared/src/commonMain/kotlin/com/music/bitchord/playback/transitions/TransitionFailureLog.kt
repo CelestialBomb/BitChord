@@ -43,10 +43,6 @@ class TransitionFailureLog {
         failures.values.removeAll { it.from == mediaId || it.to == mediaId }
     }
 
-    fun clear() = failures.clear()
-
-    val isEmpty: Boolean get() = failures.isEmpty()
-
     private fun verdictFor(count: Int): Verdict = when {
         count <= 0 -> Verdict.NORMAL
         count == 1 -> Verdict.PLAIN_CROSSFADE
