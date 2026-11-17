@@ -141,12 +141,12 @@ fun CustomTransitionEditor(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
         Column(
             Modifier
-                .fillMaxWidth()
+                .weight(1f, fill = false)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .navigationBarsPadding(),
+                .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(stringResource(R.string.editor_title), style = MaterialTheme.typography.titleLarge)
@@ -256,8 +256,12 @@ fun CustomTransitionEditor(
                 )
             }
 
-            Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
                 if (saved != null) {
                     TextButton(onClick = {
                         CustomTransitionStore.reset(playlistId, outgoing.videoId, incoming.videoId)
@@ -275,8 +279,7 @@ fun CustomTransitionEditor(
                     CustomTransitionStore.save(playlistId, outgoing.videoId, incoming.videoId, finalDraft(draft, beatSeconds, outMs, inMs))
                     onDismiss()
                 }) { Text(stringResource(R.string.editor_save)) }
-            }
-            Spacer(Modifier.height(16.dp))
+        }
         }
     }
 }

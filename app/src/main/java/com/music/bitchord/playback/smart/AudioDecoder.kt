@@ -199,6 +199,15 @@ object AudioDecoder {
             val startUs = (startSeconds * 1_000_000).toLong()
             val endUs = (endSeconds * 1_000_000).toLong()
             extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+            // A seek that lands on nothing readable (a partly cached stream whose seek index
+            // points outside what was fetched) is otherwise silent: it just yields no audio.
+            if (startUs > 0) {
+                Log.d(
+                    TAG,
+                    "Seek to ${startUs / 1_000_000.0}s of $mime: first sample at ${extractor.sampleTime}us " +
+                        "(container ${runCatching { format.getLong(MediaFormat.KEY_DURATION) / 1_000_000.0 }.getOrNull()}s)",
+                )
+            }
 
             codec = runCatching { MediaCodec.createDecoderByType(mime) }
                 .onFailure { Log.w(TAG, "No decoder for $mime", it) }

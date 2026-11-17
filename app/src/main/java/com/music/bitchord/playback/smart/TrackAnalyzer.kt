@@ -41,6 +41,7 @@ import com.music.bitchord.data.innertube.StreamResolver
 import com.music.bitchord.playback.transitions.CUSTOM_WINDOW_SECONDS
 import com.music.bitchord.playback.transitions.MixWindow
 import com.music.bitchord.playback.transitions.WINDOW_BYTE_BUDGET
+import com.music.bitchord.playback.transitions.WindowFetchPlan
 import com.music.bitchord.playback.transitions.WindowSide
 import com.music.bitchord.playback.transitions.WindowSource
 import com.music.bitchord.playback.transitions.decideWindowSource
@@ -1651,7 +1652,15 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                     else -> Unit
                 }
                 val rendition = AudioCache.Rendition(videoId, total, cachedPrefix = 0L)
-                ({ cache.renditionDataSource(analysisUri, rendition) })
+                val partial: () -> MediaDataSource? = { cache.renditionDataSource(analysisUri, rendition) }
+                // A tail has a hole of unread bytes before it, which the extractor cannot seek over:
+                // for WebM it is handed a small standalone file built from the header and the tail.
+                val stitched = if (side == WindowSide.TAIL && plan != null) {
+                    stitchedTail(partial, plan)
+                } else {
+                    null
+                }
+                if (stitched != null) ({ BytesDataSource(stitched) }) else partial
             }
         }
 
@@ -1697,6 +1706,42 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                 "${beats.size} beats at ${"%.0f".format(Locale.ROOT, window.bpm)} BPM, ${SystemClock.elapsedRealtime() - began}ms",
         )
         return WindowResult(window, source, "ok")
+    }
+
+    /** The header and the fetched tail of a WebM stream as one small file the extractor can open, or null. */
+    private fun stitchedTail(open: () -> MediaDataSource?, plan: WindowFetchPlan): ByteArray? {
+        val source = open() ?: return null
+        return source.use {
+            val header = readBytes(it, plan.header.position, plan.header.length) ?: return null
+            val tail = readBytes(it, plan.window.position, plan.window.length) ?: return null
+            MatroskaWindow.stitch(header, tail)
+        }.also { Log.d(TAG, "Tail window ${if (it != null) "stitched into ${it.size} bytes" else "is not a WebM it can stitch"}") }
+    }
+
+    private fun readBytes(source: MediaDataSource, position: Long, length: Long): ByteArray? {
+        if (length <= 0 || length > Int.MAX_VALUE) return null
+        val out = ByteArray(length.toInt())
+        var done = 0
+        while (done < out.size) {
+            val count = source.readAt(position + done, out, done, out.size - done)
+            if (count <= 0) return null
+            done += count
+        }
+        return out
+    }
+
+    /** A decoded-from-memory source for a window that was stitched together. */
+    private class BytesDataSource(private val bytes: ByteArray) : MediaDataSource() {
+        override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
+            if (position >= bytes.size) return -1
+            val count = minOf(size.toLong(), bytes.size - position).toInt()
+            System.arraycopy(bytes, position.toInt(), buffer, offset, count)
+            return count
+        }
+
+        override fun getSize(): Long = bytes.size.toLong()
+
+        override fun close() = Unit
     }
 
     fun release() {
