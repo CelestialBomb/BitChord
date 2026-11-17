@@ -2005,6 +2005,11 @@ class PlaybackService : MediaLibraryService() {
                     else -> null
                 }
             },
+            loopCopyReady = { item, durationMs ->
+                item.localConfiguration?.uri?.let { uri ->
+                    trackAnalyzer.hasLoopCopy(item.mediaId, uri, durationMs / 1000.0)
+                } == true
+            },
             loopRegion = { item, durationMs, from, to, rate ->
                 item.localConfiguration?.uri?.let { uri ->
                     trackAnalyzer.loopRegion(item.mediaId, uri, durationMs / 1000.0, from, to, rate)

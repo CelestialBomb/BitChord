@@ -343,6 +343,39 @@ To check on the phone (the phone was locked): the Loop switch is enabled for two
 have played through; Preview of a loop pair logs `plan ... custom=loop/2bars/ramp` and
 `loop mix at ...`; a pair with no clean loop near the start logs `custom=fallback(loop: ...)`.
 
+### Flush investigation: where it stands (17 Nov, paused)
+
+Pushed first: both repos at e33ff8e6..4f7ca0e6 (Android) and 7a665f30..0a54ea4d (PC).
+
+Findings so far:
+- "The decks would not build" (the common Preview failure, 2 of 4 runs on Hot Milk -> Flowers) is a
+  cache problem, not the flush. The loop decks are decoded from the cache and `chooseRendition` needs a
+  COMPLETE cached copy; a song that was seeked into, or whose playing rendition is the `#hifi` upgrade
+  (only the first 1 MB cached), has none, so `loopRegion` returns null 3 ms after arming. The failing
+  runs have no "Loop region ... from ..." line; the passing ones do (standard rendition fetched whole,
+  [0, 4401978)). The planner only asked for the stored analysis, never for a readable copy, and the
+  failure then dropped the pair to PLAIN_CROSSFADE for the session.
+  Fix built, NOT yet checked on the phone: `TrackAnalyzer.hasLoopCopy` + a controller check
+  (`loopCopyFor`, re-asked every 3 s) so a missing copy reads "waiting on <song>'s audio in the cache"
+  and is no failure. Tests pass; not committed as verified.
+- The mid-mix flush (Dream, Ivory 16 Nov; one Preview 17 Nov) is still unexplained. Both came about 20.5 s
+  after takeover with the end held and 24 s of file left. No fixed ~20 s constant in the loop code
+  (LOOP_* constants, SHIFT_MARGIN_US 300 ms, region pre/tail 1 s / 3 s, stopAt = elementAt + 2 s).
+  In six Preview runs since (4 with the stack logging) none flushed: 2 build failures, 4 clean passes,
+  including one with a quality-upgrade swap 3 s before arming. So a swap before arming does not cause it.
+- Added: PrecisionAudioSink logs "loop mix sink flush/reset mid-mix" with the sink (outgoing/incoming),
+  position, lead and the CALLER'S STACK whenever a sink is flushed during a mix. The next flush will
+  name who called it.
+- The incoming deck ends -2.2 to -2.3 s off the outgoing deck at the handover on Hot Milk -> Flowers every
+  time (the incoming start is clamped at 0, so 15.6 s of silence is inserted and the third correction
+  overshoots); Flamingo -> i don't belong here ended 0.05 ms off. Noted, not investigated.
+- Dream, Ivory -> I Can't Say Goodbye not reproduced: the songs are not in the library lists I could
+  reach; try Search or listening history.
+
+Next: check the readiness fix on the phone (Preview x3: expect no "decks would not build", and a plain
+blend with "waiting on ... audio" when the copy is missing), keep Previewing until a flush gives a stack,
+find Dream, Ivory.
+
 ### Loop mix flush near the song end: my first explanation was wrong (corrected 17 Nov, evening)
 
 What I wrote earlier today (and in commit 4612185c): the handover lands after the outgoing file's

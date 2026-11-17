@@ -1587,6 +1587,17 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
         results[trackId]?.takeIf { it.isUsable } ?: store.load(trackId)?.takeIf { it.isUsable }
 
     /**
+     * Whether a complete cached copy of [trackId] is there to decode loop regions from. The loop mix
+     * decodes a stretch at each end of both songs from the cache and needs the whole rendition on
+     * disk: a song that was seeked into, or is being upgraded to another rendition, may have only
+     * part of one, and the decks then cannot be built. Reads headers, so not for every tick.
+     */
+    fun hasLoopCopy(trackId: String, uri: Uri, durationSeconds: Double): Boolean {
+        if (uri.getQueryParameter("v") == null && uri.authority == "source") return false
+        return runCatching { copyToRead(trackId, uri, durationSeconds) }.getOrNull() != null
+    }
+
+    /**
      * Whether [trackId] has the whole-track analysis the loop mix is planned from: not the
      * provisional result of its opening, and with the vocal mask and levels that say which
      * bars are instrumental. Those come from playing the song through (or downloading it

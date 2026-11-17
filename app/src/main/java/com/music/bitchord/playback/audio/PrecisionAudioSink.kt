@@ -659,7 +659,7 @@ class PrecisionAudioSink(
     override fun flush() {
         processedEndUs = C.TIME_UNSET
         dspChain.transition.leadUs = 0L
-        loopInterrupted()
+        loopInterrupted("flush")
         streaming = false
         outputByteBuffer.clear()
         outputByteBuffer.flip()
@@ -677,7 +677,7 @@ class PrecisionAudioSink(
     override fun reset() {
         processedEndUs = C.TIME_UNSET
         dspChain.transition.leadUs = 0L
-        loopInterrupted()
+        loopInterrupted("reset")
         streaming = false
         processCounter = 0L
         outputByteBuffer.clear()
@@ -712,10 +712,18 @@ class PrecisionAudioSink(
      * One merely armed, with nothing processed yet, survives: the incoming
      * player's own start-up seek lands here.
      */
-    private fun loopInterrupted() {
+    private fun loopInterrupted(what: String) {
         val port = loop
         if ((port.outArm != null && loopRendering) || (port.inArm != null && loopInStarted)) {
             port.interrupted = true
+            // Who flushed a sink in the middle of a mix: the stack names the caller (a seek, a renderer
+            // reset, a player stop, ...), which the controller's "a sink was flushed" cannot.
+            Log.w(
+                TAG,
+                "loop mix sink $what mid-mix: ${if (port.outArm != null) "outgoing" else "incoming"}, " +
+                    "position ${port.positionUs / 1000} ms, lead ${port.sinkLeadUs / 1000} ms",
+                Throwable("who called $what"),
+            )
         }
         loopGenerating = false
         loopRendering = false
