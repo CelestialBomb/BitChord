@@ -26,7 +26,7 @@ backup must include custom transitions and Mix flags; the editor loads only the
 | 4. `MixWindowStore`, window plan, window loader | **Done in code**, shared 208 / app 1255 pass; **not yet run against a real stream** (needs the editor, step 6) |
 | 5. Playlist UI (toggle, BPM/key, transition rows, Analyse playlist) | **Done in code**, app tests 1262 pass; app starts cleanly; **not yet looked at on screen** |
 | 6. Editor sheet and Preview | **Done and checked on the phone** (17 Nov): layout, drag, Rise + High-pass, Preview, Save/reopen, Gapless, No mix, window fetch (head and tail). Shared 238 / app 1262 pass |
-| 7. Design doc 0.5 (both repos), push | To do |
+| 7. Design doc 0.5 (both repos), push | Doc 0.5 written (4.8, codes, fixtures note, verification); copied to the PC repo; pushed after a secrets scan |
 
 Step 2 notes: backup checked first. The in-app export only wrote `bitchord_settings`
 and listening, so a store in its own preference file would have been left out; it now
