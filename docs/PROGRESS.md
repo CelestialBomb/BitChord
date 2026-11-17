@@ -25,7 +25,7 @@ backup must include custom transitions and Mix flags; the editor loads only the
 | 3. Controller hook, high-pass exit, preview override | **Done**, app tests 1254 pass; no UI yet, so nothing to try on the phone |
 | 4. `MixWindowStore`, window plan, window loader | **Done in code**, shared 208 / app 1255 pass; **not yet run against a real stream** (needs the editor, step 6) |
 | 5. Playlist UI (toggle, BPM/key, transition rows, Analyse playlist) | **Done in code**, app tests 1262 pass; app starts cleanly; **not yet looked at on screen** |
-| 6. Editor sheet and Preview | To do |
+| 6. Editor sheet and Preview | **Done in code**, shared 227 / app 1262 pass; **not yet used on the phone** (screen was locked), so the window loader has still not met a real stream |
 | 7. Design doc 0.5 (both repos), push | To do |
 
 Step 2 notes: backup checked first. The in-app export only wrote `bitchord_settings`
@@ -77,6 +77,22 @@ window; Analyse playlist asks four songs at a time, respects Wi-Fi only, and say
 cannot start. Playlist ids are normalised (`VLPL..` = `PL..`) in the store so a pair saved on
 the page also matches when the playlist is played from a card. Key shows once a song has a
 head or whole analysis; a row with neither shows nothing extra.
+
+Step 6 notes: tapping a transition line opens `CustomTransitionEditor` (a bottom sheet). Mode
+Mix / Gapless / No mix; for Mix: the outgoing song's last 45 s as a `TransitionDeck` (the
+popup's three-band waveform and colours) with the blend as a frame you drag, snapping to
+beats and clamped by `moveStart` so it always plays as drawn; the incoming song's first 45 s
+read-only; style, length (bars on a grid, seconds without), bass swap (grid only), exit filter
+and amount. Reset, Preview, Save. Preview stands the draft in for the pair (clearing its
+failure record), plays the playlist through `playDetailSongs` and seeks to 8 s before the
+blend. Save also writes the length in seconds so the same blend plays if the grid is not
+trusted later. If a window cannot be read the editor still works and offers Try again and
+Download both songs (`startDownload`); Wi-Fi only shows its own message. The editor's
+arithmetic is in shared `CustomTransitionEditing.kt` (15 tests, including that an accepted
+draft is one `applyCustomTransition` applies).
+**First things to check on the phone**: the log lines `Mix window <id> <side> from <source>`
+(or why it failed); that dragging snaps and the frame stays on screen; that Preview starts
+~8 s before and the blend plays (log `plan ... custom=mix/...`).
 
 Step 1 notes: reason codes `before-custom` / `custom`, `custom-gapless`,
 `custom-no-mix`; fallbacks are policy reasons on the planner's own plan

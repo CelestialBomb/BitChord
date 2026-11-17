@@ -154,6 +154,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.music.bitchord.data.model.durationMillis
 import com.music.bitchord.data.scrobbling.LastFM
+import com.music.bitchord.data.CustomTransitionStore
 import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.data.settings.BitPerfectMode
 import com.music.bitchord.ui.AddonBlockedAlert
@@ -329,6 +330,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import com.music.bitchord.ui.player.LocalPlayerDock
 import com.music.bitchord.ui.player.PlayerDock
 import com.music.bitchord.ui.screens.DetailScreen
+import com.music.bitchord.ui.screens.CustomTransitionEditor
 import com.music.bitchord.ui.screens.rememberPlaylistMix
 import com.music.bitchord.ui.screens.sortedForDetail
 import com.music.bitchord.ui.screens.ExploreScreen
@@ -3270,6 +3272,9 @@ private fun BitChordApp(
                             }
                             // This page's songs being rearranged, drawn in place of its list.
                             val reordering = reorderTarget?.takeIf { it.browseId == page.browseId }
+                            // The pair whose custom transition is being edited (Mix on a playlist).
+                            var editingPair by remember(page.browseId) { mutableStateOf<Pair<Song, Song>?>(null) }
+                            val editorScope = rememberCoroutineScope()
                             DetailScreen(
                                 page = page,
                                 currentSong = player.song,
@@ -3345,7 +3350,11 @@ private fun BitChordApp(
                                 },
                                 songSort = songSort,
                                 folder = folder,
-                                mix = rememberPlaylistMix(page, isFolder = folder != null),
+                                mix = rememberPlaylistMix(
+                                    page,
+                                    isFolder = folder != null,
+                                    onOpenTransition = { out, into -> editingPair = out to into },
+                                ),
                                 contentPadding = listPadding,
                                 reorder = if (reordering != null) {
                                     { palette ->
@@ -3377,6 +3386,36 @@ private fun BitChordApp(
                                     null
                                 },
                             )
+                            editingPair?.let { (out, into) ->
+                                CustomTransitionEditor(
+                                    playlistId = page.browseId,
+                                    outgoing = out,
+                                    incoming = into,
+                                    automixOn = AppSettings.smartFadeEnabled.value,
+                                    onPreview = { draft, startSeconds ->
+                                        // Played for real: the draft stands in for this pair until its
+                                        // blend begins, then the playlist plays on from a few seconds before.
+                                        CustomTransitionStore.setPreview(page.browseId, out.videoId, into.videoId, draft)
+                                        val songs = (page.songs as? UiState.Success)?.data.orEmpty()
+                                        val index = songs.indexOfFirst { it.videoId == out.videoId }
+                                        if (index >= 0) {
+                                            playDetailSongs(songs, index)
+                                            editorScope.launch {
+                                                repeat(40) {
+                                                    delay(150)
+                                                    val c = controller
+                                                    if (c != null && c.currentMediaItem?.mediaId == out.videoId) {
+                                                        c.seekTo((startSeconds * 1000).toLong())
+                                                        return@launch
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onDownload = { startDownload(listOf(out, into), null) },
+                                    onDismiss = { editingPair = null },
+                                )
+                            }
                         } else when ((destination as? AppDestination.Tab)?.index ?: selectedTab) {
                             TAB_HOME -> HomeScreen(
                                 state = visibleHomeState,
