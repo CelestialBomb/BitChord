@@ -999,7 +999,23 @@ class CrossfadeController(
         val beatAt = fadeEndMs - fadeMs
         if (decision.action == SkipAction.BLEND && positionMs(out) < beatAt - SKIP_BEAT_EARLY_MS) return
         Log.d(TRANSITION_TAG, "skip blend starts at ${out.currentPosition}ms, ${waited}ms after the press (${decision.reason})")
+        // Where the blend really starts, now that it has: [mixGeometry] and the
+        // mix view read the span from here.
+        fadeEndMs = out.currentPosition + fadeMs
         startFade()
+        // The view [startFade] published for it has no waveforms yet: decoded
+        // now, after the incoming player is ready rather than competing with it.
+        val outItem = out.currentMediaItem
+        val inItem = into.currentMediaItem
+        if (outItem != null && inItem != null && AppSettings.smartMixView.value != null) {
+            val geometry = mixGeometry()
+            prefetchMixWaves(
+                outItem, inItem,
+                out.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L,
+                into.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: queuedDurationMs(inItem),
+                geometry.outStart, geometry.outEnd, geometry.inStart, geometry.ratio,
+            )
+        }
     }
 
     /** The skip the listener asked for, done the ordinary way after a skip blend could not start. */
@@ -1142,6 +1158,9 @@ class CrossfadeController(
         lastLoopVerdict = ""
         lastStandardVerdict = ""
         lastGateVerdict = ""
+        // Deduped on the verdict alone, so a new pair that is "shown" like the
+        // old one was never logged after a queue change.
+        lastMarkerVerdict = ""
     }
 
     // ---- Ticker -------------------------------------------------------------
@@ -2631,14 +2650,17 @@ class CrossfadeController(
      * will ride, with whichever waveforms have already been decoded.
      */
     private fun publishMixView(out: ExoPlayer, into: ExoPlayer) {
-        val plan = planInFlight ?: return
+        // A Mix on skip blend has no planner plan, only its decision; without
+        // this it published no view at all, while the "Mixing" label still
+        // offered one: the popup it opened waited, found nothing, and closed
+        // with "No Automix transition coming up" over an audible mix.
+        val beatSeconds = planInFlight?.beatSeconds ?: skipBlend?.beatSeconds ?: return
         val outItem = out.currentMediaItem ?: return
         val inItem = into.currentMediaItem ?: return
         val geometry = mixGeometry()
         val outStart = geometry.outStart
         val outEnd = geometry.outEnd
         val outSpan = geometry.outSpan
-        val beatSeconds = plan.beatSeconds
         val beats = if (beatSeconds > 0) (outSpan / beatSeconds).roundToInt() else 0
         val marks = beatMarks(outgoingAnalysis, outStart, outEnd, beatSeconds)
         val wallSpan = (fadeMs * if (render.advanced) mediaRatio else 1.0).toFloat()
