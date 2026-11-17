@@ -308,4 +308,56 @@ class LoopMixTest {
     fun noMaskAndNoLyricsMeansNoLoop() {
         assertNull(plan(analysis(120.0, 200.0), analysis(120.0, 180.0), null, null))
     }
+
+    // ---- The handover has to land inside the outgoing song's own file ------------------------
+
+    private fun handoverMargin(plan: LoopMix.Plan, duration: Double): Double =
+        duration - (plan.out.loopStart + LoopMix.Clock(plan).handoffAt)
+
+    @Test
+    fun theHandoverOfASlowMixOnAShortSongLandsBeforeItsFileEnds() {
+        // Device log 16 Nov: 188 s song at 60 BPM into 69 BPM. The latest loop (about 171 s) put the handover
+        // at about 194 s, after the file's end, and the outgoing sink was flushed 3.7 s before that end.
+        val plan = assertNotNull(plan(analysis(60.0, 188.0), analysis(69.0, 200.0)))
+        assertTrue(
+            handoverMargin(plan, 188.0) >= LoopMix.OUT_END_GUARD_SEC,
+            "handover ${LoopMix.Clock(plan).handoffAt} s after a loop at ${plan.out.loopStart} s",
+        )
+        assertTrue(plan.out.loopStart < 165, "an earlier loop than the latest one: ${plan.out.loopStart}")
+    }
+
+    @Test
+    fun everyPlanHandsOverBeforeTheOutgoingFileEndsWhateverTheTempoAndLength() {
+        var plans = 0
+        for (duration in listOf(75.0, 120.0, 188.0, 240.0, 400.0)) {
+            for (outBpm in listOf(60.0, 89.0, 124.0, 170.0)) {
+                for (inBpm in listOf(60.0, 75.0, 99.0, 128.0, 180.0)) {
+                    val plan = plan(analysis(outBpm, duration), analysis(inBpm, 200.0)) ?: continue
+                    plans++
+                    assertTrue(
+                        handoverMargin(plan, duration) >= LoopMix.OUT_END_GUARD_SEC,
+                        "$outBpm -> $inBpm BPM on $duration s: loop ${plan.out.loopStart}, " +
+                            "handover ${LoopMix.Clock(plan).handoffAt} s later",
+                    )
+                }
+            }
+        }
+        assertTrue(plans > 20, "most of these pairs can be mixed: $plans")
+    }
+
+    @Test
+    fun aSongTooShortForTheMixGetsNoLoopMixAndSaysWhy() {
+        val why = StringBuilder()
+        val out = analysis(120.0, 15.0)
+        val inn = analysis(120.0, 200.0)
+        assertNull(LoopMix.plan(out, out.duration, inn, inn.duration, 0.0, clear, clear, why = why))
+        assertTrue("too late" in why, why.toString())
+    }
+
+    @Test
+    fun aLongSongKeepsItsLatestLoopWhenTheHandoverFitsAsBefore() {
+        // 124 -> 124 BPM on 200 s: the handover is about 10 s in, so the loop is still the latest one
+        val plan = assertNotNull(plan(analysis(124.0, 200.0), analysis(124.0, 180.0)))
+        assertTrue(plan.out.loopEnd > 190, "${plan.out.loopEnd}")
+    }
 }

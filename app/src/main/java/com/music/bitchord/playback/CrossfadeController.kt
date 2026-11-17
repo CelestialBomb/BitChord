@@ -2949,7 +2949,7 @@ class CrossfadeController(
         SleepTimer.afterTrack.value -> "sleep timer"
         state.current != TrackAnalysisState.ANALYSED || state.next != TrackAnalysisState.ANALYSED -> "waiting on analysis"
         isSourceBacked(current) || isSourceBacked(next) -> "analysed off another recording"
-        loopPortOf(player)?.supportsLoopMix != true -> "this output can't take it"
+        loopPortOf(player)?.supportsLoopMix != true -> "this output can't take it (${loopPortOf(player)?.let { "precision=${it.precision} ch=${it.channelCount} rate=${it.sampleRate}" } ?: "no port"})"
         loopPortOf(standby()) == null -> "no standby sink"
         else -> null
     }
@@ -3159,6 +3159,7 @@ class CrossfadeController(
         if (session.outPort.interrupted) return loopBail("the outgoing sink was flushed", settle = false)
         if (session.outPort.tookOver) {
             phase = Phase.LOOP_RUNNING
+            traceLoop("takeover", session, out)
             AppSettings.smartTransitionWindow.value = null
             AppSettings.smartMixInProgress.value = true
             scope.launch(Dispatchers.Default) {
@@ -3174,6 +3175,27 @@ class CrossfadeController(
         }
         val m = session.mixSeconds(System.nanoTime(), out.isPlaying) ?: return
         if (m > 1.0) loopBail("the sink never reached the loop")
+    }
+
+    /**
+     * Where the outgoing player's own file is against the mix clock. The outgoing
+     * player keeps reading its file under the renderer until the handoff, so the
+     * handoff has to land before the file does: `left` is what the file has left,
+     * `handoffIn` how long until the mix hands over.
+     */
+    private fun traceLoop(event: String, session: LoopMixSession, out: ExoPlayer) {
+        val m = session.mixSeconds(System.nanoTime(), out.isPlaying)
+        val duration = out.duration.takeIf { it != C.TIME_UNSET } ?: -1L
+        val handoffIn = m?.let { session.clock.handoffAt - it }
+        Log.d(
+            TRANSITION_TAG,
+            "loop trace $event: outgoing at ${out.currentPosition}ms of ${duration}ms " +
+                "(${duration - out.currentPosition}ms left), mix ${m?.let { "%.2f".format(Locale.ROOT, it) }}s, " +
+                "handoff in ${handoffIn?.let { "%.2f".format(Locale.ROOT, it) }}s, " +
+                "mix ends at ${"%.2f".format(Locale.ROOT, session.clock.elementAt)}s, loop at " +
+                "${"%.2f".format(Locale.ROOT, session.plan.out.loopStart)}s, " +
+                "handoff ${"%.2f".format(Locale.ROOT, session.clock.handoffAt)}s after it",
+        )
     }
 
     /** The mix is running: starts the incoming player, aligns it, hands the session over, and ends. */
@@ -3198,6 +3220,7 @@ class CrossfadeController(
             startLoopAlignment(session)
         }
         if (!handedOff && m >= session.clock.handoffAt) {
+            traceLoop("handoff", session, out)
             handOff(out, into)
         }
         publishLoopBeat(session, m, now)
@@ -3317,6 +3340,7 @@ class CrossfadeController(
      */
     private fun loopBail(reason: String, settle: Boolean = true) {
         val session = loopSession
+        session?.let { outgoing?.let { out -> traceLoop("stop: $reason", it, out) } }
         // A pause is the listener's; so is anything that came through [bailByListener].
         val failed = !bailIsListener && !reason.startsWith("paused")
         Log.d(TRANSITION_TAG, "loop mix stops ($phase, pair=$activePair, failed=$failed): $reason")

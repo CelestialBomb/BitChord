@@ -279,16 +279,44 @@ Implemented in `0ed30bb0`, Beat-aware only (off: unchanged):
 Known limit: when an analysis has failed for good, the window stays dimmed
 (it will not move, but it is still the fallback plan).
 
-### Loop mix fails near the song end (new, from the bug 1 log)
+### Loop mix fails near the song end: cause found and fixed (17 Nov)
 
-The loop mix took over at 164 s with a 41 s mix on a 188 s song, and had not
-handed off 20 s later when the sink was flushed 3.7 s before the file end.
-Hypothesis (not confirmed): the outgoing player keeps advancing through its own
-file during the loop, reaches its end before the mix hands over, and that
-flushes the sink. Next step: log the outgoing player's position and the mix
-clock (`handoffAt`, `elementAt`) at takeover and at each loop wrap, and check
-whether `LoopMix.plan` should refuse a mix whose handover lands past the end of
-the outgoing file.
+The cause was the handover landing after the outgoing file's end. Under the
+renderer the outgoing player keeps reading its own file at 1x until the handover
+(`Clock.handoffAt`, mid-ramp); when the file ends first, its sink is flushed and the
+mix dies. Dream, Ivory: 188 s song, loop at 164.0 s, 60 -> 69 BPM, handover about
+23.5 s after the loop = about 187.5 s; the flush came at 184.6 s, one sink lead
+(about 3.7 s) before the end. `LoopMix.plan` only checked that the loop ended 0.5 s
+before the song did.
+
+Confirmed on the phone with the new `loop trace` log lines (takeover, handoff, stop):
+Hot Milk -> Flowers, loop at 201.60 s, handoff 27.64 s later; the outgoing player was at
+229.26 s of 246.58 s when the handoff fired (loop start + handoff, on the real clock).
+
+Fix: `LoopMix.plan` now takes the latest loop whose
+`loopStart + handoffAt <= duration - OUT_END_GUARD_SEC` (6 s: the 3.7 s sink lead plus
+margin), trying earlier loops inside the 60 s search, and refuses the mix with
+"N too late (the mix would outlast the song)" when none fits (the pair then gets the
+planner's blend). Tests: the 188 s / 60 -> 69 BPM case, a property test over durations
+and tempos, a song too short, and a long song that keeps its latest loop.
+No runtime guard is needed: the relation depends only on the plan and 1x speed
+(speed is already a refusal).
+
+Not verified on the phone: the exact failing pair (Dream, Ivory -> I Can't Say Goodbye)
+was not set up again; the working pair was unchanged by the fix in the unit tests.
+
+Observations, not fixed:
+- Loop mix refused with "this output can't take it (precision=false ch=0 rate=0)" for
+  every pair after a run of skips in one session (a fresh start, and a plain blend
+  followed by the next pair, were fine). The sink's loop format reads as unconfigured.
+  The sink code is unchanged from v1.9.1. Worth a look if it shows up for listeners.
+- Lyrics sometimes come back empty for a song; the planner then has only the vocal mask
+  and refuses loops it would otherwise take.
+- The loop mix log reports "incoming -2243 ms against the deck at the handover"
+  (alignment error); the user likes how it sounds, so only noted.
+- A custom pair saved on Elevator Music (Flamingo -> Hot Milk, Rise) had vanished from the
+  store by the next hour; saving and a force-stop afterwards keep a pair, and only the
+  editor's Save and "Use automatic" write pairs. Not explained; watch for it.
 
 ### Bug 1: what was done
 
