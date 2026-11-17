@@ -293,6 +293,9 @@ object AppSettings {
     val automixStyle = MutableStateFlow(MixStyle.SMOOTH)
     val automixBlendLength = MutableStateFlow(BlendLength.MEDIUM)
 
+    /** Mix on skip: a short blend when the listener skips forward mid-song (design doc 4.6). Off by default. */
+    val mixOnSkip = MutableStateFlow(false)
+
     val skipSilence = MutableStateFlow(false)
 
     /** Requested PCM representation at the Android AudioTrack boundary. */
@@ -1001,6 +1004,7 @@ object AppSettings {
         beatAwareAlbumGapless.value = prefs.getBoolean(KEY_BEAT_AWARE_ALBUM_GAPLESS, true)
         automixStyle.value = MixStyle.fromKey(prefs.getString(KEY_AUTOMIX_STYLE, null))
         automixBlendLength.value = BlendLength.fromKey(prefs.getString(KEY_AUTOMIX_BLEND_LENGTH, null))
+        mixOnSkip.value = prefs.getBoolean(KEY_MIX_ON_SKIP, false)
         skipSilence.value = prefs.getBoolean(KEY_SKIP_SILENCE, false)
         outputPcmMode.value = runCatching {
             OutputPcmMode.valueOf(
@@ -1352,6 +1356,11 @@ object AppSettings {
     fun setAutomixBlendLength(value: BlendLength) {
         automixBlendLength.value = value
         prefs.edit().putString(KEY_AUTOMIX_BLEND_LENGTH, value.key).apply()
+    }
+
+    fun setMixOnSkip(value: Boolean) {
+        mixOnSkip.value = value
+        prefs.edit().putBoolean(KEY_MIX_ON_SKIP, value).apply()
     }
 
     fun setSkipSilence(value: Boolean) {
@@ -2316,6 +2325,7 @@ object AppSettings {
     private const val KEY_BEAT_AWARE_ALBUM_GAPLESS = "beat_aware_album_gapless"
     private const val KEY_AUTOMIX_STYLE = "automix_style"
     private const val KEY_AUTOMIX_BLEND_LENGTH = "automix_blend_length"
+    private const val KEY_MIX_ON_SKIP = "mix_on_skip"
     private const val KEY_SKIP_SILENCE = "skip_silence"
     private const val KEY_OUTPUT_PCM_MODE = "output_pcm_mode"
     private const val KEY_PREFER_USB_DAC = "prefer_usb_dac"

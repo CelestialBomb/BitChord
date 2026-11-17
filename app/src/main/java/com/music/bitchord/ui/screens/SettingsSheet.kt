@@ -240,6 +240,7 @@ fun SettingsScreen(
     val beatAwareAlbumGapless by AppSettings.beatAwareAlbumGapless.collectAsStateWithLifecycle()
     val automixStyle by AppSettings.automixStyle.collectAsStateWithLifecycle()
     val automixBlendLength by AppSettings.automixBlendLength.collectAsStateWithLifecycle()
+    val mixOnSkip by AppSettings.mixOnSkip.collectAsStateWithLifecycle()
     val skipSilence by AppSettings.skipSilence.collectAsStateWithLifecycle()
     val dolbyAtmos by AppSettings.dolbyAtmos.collectAsStateWithLifecycle()
     val directSourceStream by AppSettings.directSourceStream.collectAsStateWithLifecycle()
@@ -886,6 +887,20 @@ fun SettingsScreen(
                                 modifier = Modifier.padding(start = TEXT_INSET, end = ROW_INSET, bottom = 14.dp),
                             )
                         }
+                    }
+                }
+                val mixOnSkipTitle = stringResource(R.string.mix_on_skip)
+                row(mixOnSkipTitle, "skip", "next", "swipe") {
+                    BypassedByBitPerfect(bitPerfectReady) {
+                        SettingsRow(
+                            icon = SfIcons.AutoAwesome,
+                            title = mixOnSkipTitle,
+                            subtitle = stringResource(R.string.mix_on_skip_subtitle),
+                            trailing = {
+                                IosSwitch(checked = mixOnSkip, onCheckedChange = AppSettings::setMixOnSkip)
+                            },
+                            onClick = { AppSettings.setMixOnSkip(!mixOnSkip) },
+                        )
                     }
                 }
                 val beatAwareTitle = stringResource(R.string.beat_aware_title)

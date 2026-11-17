@@ -3488,7 +3488,7 @@ class PlaybackService : MediaLibraryService() {
      * *before* the incoming one asks for it, so the app never holds two focus
      * requests at once and never briefly holds none.
      */
-    private fun adoptPlayer(outgoing: ExoPlayer, incoming: ExoPlayer) {
+    private fun adoptPlayer(outgoing: ExoPlayer, incoming: ExoPlayer, skipped: Boolean) {
         setSessionOwner(outgoing, owns = false)
         setSessionOwner(incoming, owns = true)
 
@@ -3514,10 +3514,14 @@ class PlaybackService : MediaLibraryService() {
         // that callback is driven explicitly instead. Without this the crossfade
         // would silently stop scrobbling, stop writing history, stop honouring
         // "sleep after this song" and stop reading ahead.
+        //
+        // A Mix on skip blend is the listener's skip, only blended: booked as
+        // the skip it is (a SEEK, the old song not finished), so it is not
+        // scrobbled as listened to and does not fire "sleep after this song".
         onTrackBecameCurrent(
             incoming.currentMediaItem,
-            previousEnded = true,
-            reason = Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
+            previousEnded = !skipped,
+            reason = if (skipped) Player.MEDIA_ITEM_TRANSITION_REASON_SEEK else Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
             alreadyAudible = true,
         )
 
@@ -8609,9 +8613,16 @@ class PlaybackService : MediaLibraryService() {
             wrappedPlayer.seekToPrevious()
         }
 
+        // Next, swipe, headset, notification and Android Auto all land on one
+        // of these two. With Mix on skip on, the crossfade may take the skip
+        // over as a short blend (design doc 4.6); otherwise, and whenever it
+        // declines, the skip is the usual instant one, which also cuts any
+        // blend in flight. Queue taps ([seekTo] with an index) and previous
+        // never blend.
         override fun seekToNextMediaItem() {
             if (locked()) return
             onUserIntent()
+            if (crossfade.onNextRequested(externalGuard = "casting".takeIf { cast.active })) return
             crossfade.onSkipRequested()
             wrappedPlayer.seekToNextMediaItem()
         }
@@ -8619,6 +8630,7 @@ class PlaybackService : MediaLibraryService() {
         override fun seekToNext() {
             if (locked()) return
             onUserIntent()
+            if (crossfade.onNextRequested(externalGuard = "casting".takeIf { cast.active })) return
             crossfade.onSkipRequested()
             wrappedPlayer.seekToNext()
         }
