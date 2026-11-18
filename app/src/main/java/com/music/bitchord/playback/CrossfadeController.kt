@@ -835,6 +835,59 @@ class CrossfadeController(
         if (phase != Phase.IDLE) bailByListener("skip")
     }
 
+    /**
+     * Going back to a song: what this class remembered about transitions out of
+     * or into it (a failed pair, a cached loop plan, a planned start) is stale,
+     * so the song gets a fresh attempt. Called before the seek. v1.9.1's own
+     * previous button never told this class at all.
+     */
+    fun onPreviousRequested() {
+        if (phase != Phase.IDLE) bailByListener("previous")
+        val player = active()
+        player.currentMediaItem?.mediaId?.let(failureGate::forget)
+        player.previousMediaItemIndex.takeIf { it != C.INDEX_UNSET }
+            ?.let { failureGate.forget(player.getMediaItemAt(it).mediaId) }
+        dropPlannedState("previous")
+    }
+
+    /**
+     * The queue changed under the planner (Play next, Add to queue, a removal or
+     * a move). A running blend finishes with the pair it started with; one still
+     * arming for the old pair is cancelled. The cached plans are dropped, so the
+     * next tick plans against the new next song, whose analysis is asked for now.
+     */
+    fun onQueueChanged() {
+        val player = active()
+        val currentId = player.currentMediaItem?.mediaId ?: return
+        val nextId = player.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }
+            ?.let { player.getMediaItemAt(it).mediaId }
+        val nextPair = nextId?.let { "$currentId->$it" }
+        if (nextPair == lastQueuePair) return
+        TransitionLog.d("queue changed: next pair ${lastQueuePair ?: "none"} -> ${nextPair ?: "none"} (phase=$phase)")
+        lastQueuePair = nextPair
+        if (phase == Phase.IDLE || phase == Phase.ARMING || phase == Phase.LOOP_ARMING) {
+            if (phase != Phase.IDLE) bailByListener("next song changed while arming")
+            dropPlannedState("queue changed")
+            if (nextId != null) {
+                player.duration.takeIf { it != C.TIME_UNSET && it > 0L }?.let { requestAnalysisAround(player, it) }
+            }
+        }
+    }
+
+    private var lastQueuePair: String? = null
+
+    private fun dropPlannedState(why: String) {
+        TransitionLog.d("plans dropped: $why")
+        loopPlanned = null
+        loopPlanKey = null
+        loopRefusal = null
+        plannedTransition = null
+        lastSmartPlan = null
+        lastPlanVerdict = ""
+        lastLoopVerdict = ""
+        lastMarkerVerdict = ""
+    }
+
     // ---- Failure record (design doc 4.6; a v1.9.1 bug fix, Beat-aware or not) ----
 
     private val failureGate = FailureGate()
