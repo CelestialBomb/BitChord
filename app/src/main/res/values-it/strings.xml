@@ -1396,4 +1396,12 @@
     <string name="bit_perfect_status_inexact">%1$s · non esatto: questa sorgente non è PCM lossless</string>
     <string name="bit_perfect_status_waiting">In attesa di un brano lossless su un\'uscita supportata</string>
     <string name="bit_perfect_status_unavailable">Non disponibile per questo brano (%1$s)</string>
+    <string name="beat_aware_title">Transizioni sensibili al ritmo</string>
+    <string name="beat_aware_subtitle">Use trusted beat and phrase analysis; fall back to a normal crossfade when it is missing</string>
+    <string name="beat_aware_phrase">Transizioni allineate alle frasi</string>
+    <string name="beat_aware_phrase_subtitle">Enter and leave on downbeats in 8- or 16-bar phrases</string>
+    <string name="beat_aware_tempo">Abbina il tempo</string>
+    <string name="beat_aware_tempo_subtitle">Adjust the incoming track during a blend; off preserves both original tempos</string>
+    <string name="beat_aware_album">Riproduzione continua negli album</string>
+    <string name="beat_aware_album_subtitle">Keep consecutive tracks from the same album almost seamless instead of mixing them</string>
 </resources>

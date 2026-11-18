@@ -31,9 +31,9 @@ import com.music.bitchord.playback.smart.MixWaveform
 import com.music.bitchord.playback.smart.TrackAnalysis
 import com.music.bitchord.playback.smart.TransitionPlan
 import com.music.bitchord.playback.smart.TransitionStyle
-import com.music.bitchord.playback.smart.TransitionTrackInfo
 import com.music.bitchord.playback.smart.echoTailSeconds
 import com.music.bitchord.playback.smart.planTransition
+import com.music.bitchord.playback.transitions.TransitionPlanning
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1096,16 +1096,23 @@ class CrossfadeController(
         // The DJ planner is Automix now; there is no separate mode switch.
         val advanced = true
 
+        // Beat-aware settings; all defaults (the v1.9.1 planner) when it is off.
+        val options = TransitionPlanning.options(duration)
         val plan = planTransition(
             analysis = currentAnalysis,
             nextAnalysis = nextAnalysis,
-            currentTrack = currentItem.toTransitionInfo(duration),
-            nextTrack = nextItem.toTransitionInfo(nextDuration),
+            currentTrack = TransitionPlanning.trackInfo(currentItem, duration),
+            nextTrack = TransitionPlanning.trackInfo(nextItem, nextDuration),
             currentTime = player.currentPosition / 1000.0,
             duration = duration / 1000.0,
             fadeSeconds = fallbackSeconds,
             mode = CrossfadeMode.SMART,
             advanced = advanced,
+            phraseBars = options.phraseBars,
+            albumSequential = options.albumSequential,
+            mixWindow = options.mixWindow,
+            strictConfidence = options.strictConfidence,
+            allowTempoStretch = options.allowTempoStretch,
         )
         // One line per distinct verdict rather than one per 250ms tick, so the
         // log says what the planner decided for this pair without burying it.
@@ -1120,7 +1127,11 @@ class CrossfadeController(
                 TAG,
                 "plan ${currentItem.mediaId}->${nextItem.mediaId}: $verdict " +
                     "bpm=${currentAnalysis.bpm}/${nextAnalysis.bpm} " +
-                    "conf=${currentAnalysis.beatConfidence}/${nextAnalysis.beatConfidence}",
+                    "conf=${currentAnalysis.beatConfidence}/${nextAnalysis.beatConfidence} " +
+                    "beatAware=${AppSettings.beatAwareTransitions.value} albumGapless=${options.albumSequential} " +
+                    "shuffle=${QueueShuffle.enabled.value} " +
+                    "album=\"${currentItem.mediaMetadata.albumTitle ?: ""}\"/\"${nextItem.mediaMetadata.albumTitle ?: ""}\" " +
+                    "albumId=\"${TransitionPlanning.albumIdOf(currentItem)}\"/\"${TransitionPlanning.albumIdOf(nextItem)}\"",
             )
         }
 
@@ -1380,14 +1391,6 @@ class CrossfadeController(
         val seconds = runCatching { uri.getQueryParameter("d") }.getOrNull()?.toLongOrNull() ?: return 0L
         return if (seconds > 0) seconds * 1000L else 0L
     }
-
-    /** BitChord doesn't carry album metadata on [MediaMetadata] yet, so [TransitionTrackInfo.album] stays blank. */
-    private fun MediaItem.toTransitionInfo(durationMs: Long) = TransitionTrackInfo(
-        id = mediaId,
-        durationMs = durationMs,
-        title = mediaMetadata.title?.toString().orEmpty(),
-        artist = mediaMetadata.artist?.toString().orEmpty(),
-    )
 
     /**
      * Loads the standby player with the queue, positioned on the incoming track

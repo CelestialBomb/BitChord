@@ -1434,4 +1434,12 @@
     <string name="bit_perfect_status_inexact">%1$s · 不精确：此音源不是无损 PCM</string>
     <string name="bit_perfect_status_waiting">正在等待受支持输出上的无损曲目</string>
     <string name="bit_perfect_status_unavailable">此曲目不可用（%1$s）</string>
+    <string name="beat_aware_title">节拍感知过渡</string>
+    <string name="beat_aware_subtitle">Use trusted beat and phrase analysis; fall back to a normal crossfade when it is missing</string>
+    <string name="beat_aware_phrase">按乐句对齐过渡</string>
+    <string name="beat_aware_phrase_subtitle">Enter and leave on downbeats in 8- or 16-bar phrases</string>
+    <string name="beat_aware_tempo">匹配速度</string>
+    <string name="beat_aware_tempo_subtitle">Adjust the incoming track during a blend; off preserves both original tempos</string>
+    <string name="beat_aware_album">专辑内无缝播放</string>
+    <string name="beat_aware_album_subtitle">Keep consecutive tracks from the same album almost seamless instead of mixing them</string>
 </resources>

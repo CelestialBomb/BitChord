@@ -7,6 +7,7 @@ import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.util.Log
 import androidx.media3.common.Player
 import com.music.bitchord.BuildConfig
 import com.music.bitchord.auth.AuthStore
@@ -277,6 +278,13 @@ object AppSettings {
 
     /** The CPU budget used by Beat This! and vocal analysis for Automix. */
     val automixPerformanceMode = MutableStateFlow(AutomixPerformanceMode.BALANCED)
+
+    /** Beat-aware transitions: opt-in rules shared with PC (docs/transitions-design.md). Off keeps v1.9.1 Automix. */
+    val beatAwareTransitions = MutableStateFlow(false)
+    val beatAwarePhraseAligned = MutableStateFlow(true)
+    val beatAwareTempoMatching = MutableStateFlow(true)
+    val beatAwareAlbumGapless = MutableStateFlow(true)
+
     val skipSilence = MutableStateFlow(false)
 
     /** Requested PCM representation at the Android AudioTrack boundary. */
@@ -973,12 +981,19 @@ object AppSettings {
         exportDownloads.value = prefs.getBoolean(KEY_EXPORT_DOWNLOADS, false)
         syncDownloadedPlaylists.value = prefs.getBoolean(KEY_SYNC_DOWNLOADED_PLAYLISTS, false)
         crossfadeSeconds.value = prefs.getInt(KEY_CROSSFADE, 0)
-        smartFadeEnabled.value = prefs.getBoolean(KEY_SMART_FADE, false)
+        prefs.getBoolean(KEY_SMART_FADE, false).let { stored ->
+            if (stored != smartFadeEnabled.value) traceAutomix(stored, "read from preferences")
+            smartFadeEnabled.value = stored
+        }
         automixPerformanceMode.value = runCatching {
             AutomixPerformanceMode.valueOf(
                 prefs.getString(KEY_AUTOMIX_PERFORMANCE_MODE, null) ?: AutomixPerformanceMode.BALANCED.name,
             )
         }.getOrDefault(AutomixPerformanceMode.BALANCED)
+        beatAwareTransitions.value = prefs.getBoolean(KEY_BEAT_AWARE_TRANSITIONS, false)
+        beatAwarePhraseAligned.value = prefs.getBoolean(KEY_BEAT_AWARE_PHRASE_ALIGNED, true)
+        beatAwareTempoMatching.value = prefs.getBoolean(KEY_BEAT_AWARE_TEMPO_MATCHING, true)
+        beatAwareAlbumGapless.value = prefs.getBoolean(KEY_BEAT_AWARE_ALBUM_GAPLESS, true)
         skipSilence.value = prefs.getBoolean(KEY_SKIP_SILENCE, false)
         outputPcmMode.value = runCatching {
             OutputPcmMode.valueOf(
@@ -1293,13 +1308,44 @@ object AppSettings {
     }
 
     fun setSmartFadeEnabled(value: Boolean) {
+        if (value != smartFadeEnabled.value) traceAutomix(value, "set")
         smartFadeEnabled.value = value
         prefs.edit().putBoolean(KEY_SMART_FADE, value).apply()
+    }
+
+    /**
+     * Dev builds only: names whatever changed Automix, at start-up, on a backup
+     * import or from the settings row, since it was once found off with nobody
+     * remembering turning it off (REBUILD-BRIEF issue 17).
+     */
+    private fun traceAutomix(value: Boolean, how: String) {
+        if (BuildConfig.FLAVOR != "dev") return
+        Log.i("BitChordTransitions", "Automix $how: $value", Throwable("caller"))
     }
 
     fun setAutomixPerformanceMode(value: AutomixPerformanceMode) {
         automixPerformanceMode.value = value
         prefs.edit().putString(KEY_AUTOMIX_PERFORMANCE_MODE, value.name).apply()
+    }
+
+    fun setBeatAwareTransitions(value: Boolean) {
+        beatAwareTransitions.value = value
+        prefs.edit().putBoolean(KEY_BEAT_AWARE_TRANSITIONS, value).apply()
+    }
+
+    fun setBeatAwarePhraseAligned(value: Boolean) {
+        beatAwarePhraseAligned.value = value
+        prefs.edit().putBoolean(KEY_BEAT_AWARE_PHRASE_ALIGNED, value).apply()
+    }
+
+    fun setBeatAwareTempoMatching(value: Boolean) {
+        beatAwareTempoMatching.value = value
+        prefs.edit().putBoolean(KEY_BEAT_AWARE_TEMPO_MATCHING, value).apply()
+    }
+
+    fun setBeatAwareAlbumGapless(value: Boolean) {
+        beatAwareAlbumGapless.value = value
+        prefs.edit().putBoolean(KEY_BEAT_AWARE_ALBUM_GAPLESS, value).apply()
     }
 
     fun setSkipSilence(value: Boolean) {
@@ -2258,6 +2304,10 @@ object AppSettings {
     private const val KEY_CROSSFADE = "crossfade_seconds"
     private const val KEY_SMART_FADE = "smart_fade_enabled"
     private const val KEY_AUTOMIX_PERFORMANCE_MODE = "automix_performance_mode"
+    private const val KEY_BEAT_AWARE_TRANSITIONS = "beat_aware_transitions"
+    private const val KEY_BEAT_AWARE_PHRASE_ALIGNED = "beat_aware_phrase_aligned"
+    private const val KEY_BEAT_AWARE_TEMPO_MATCHING = "beat_aware_tempo_matching"
+    private const val KEY_BEAT_AWARE_ALBUM_GAPLESS = "beat_aware_album_gapless"
     private const val KEY_SKIP_SILENCE = "skip_silence"
     private const val KEY_OUTPUT_PCM_MODE = "output_pcm_mode"
     private const val KEY_PREFER_USB_DAC = "prefer_usb_dac"

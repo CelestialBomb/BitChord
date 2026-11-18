@@ -232,6 +232,10 @@ fun SettingsScreen(
     val crossfade by AppSettings.crossfadeSeconds.collectAsStateWithLifecycle()
     val smartFade by AppSettings.smartFadeEnabled.collectAsStateWithLifecycle()
     val automixPerformance by AppSettings.automixPerformanceMode.collectAsStateWithLifecycle()
+    val beatAware by AppSettings.beatAwareTransitions.collectAsStateWithLifecycle()
+    val beatAwarePhraseAligned by AppSettings.beatAwarePhraseAligned.collectAsStateWithLifecycle()
+    val beatAwareTempoMatching by AppSettings.beatAwareTempoMatching.collectAsStateWithLifecycle()
+    val beatAwareAlbumGapless by AppSettings.beatAwareAlbumGapless.collectAsStateWithLifecycle()
     val skipSilence by AppSettings.skipSilence.collectAsStateWithLifecycle()
     val dolbyAtmos by AppSettings.dolbyAtmos.collectAsStateWithLifecycle()
     val directSourceStream by AppSettings.directSourceStream.collectAsStateWithLifecycle()
@@ -832,6 +836,66 @@ fun SettingsScreen(
                         value = automixPerformance.localizedLabel(),
                         onClick = { onOpenChoice(SettingsChoiceKind.AUTOMIX_PERFORMANCE) },
                     )
+                }
+            }
+            if (smartFade) {
+                val beatAwareTitle = stringResource(R.string.beat_aware_title)
+                row(beatAwareTitle, "beat aware", "phrase", "section") {
+                    BypassedByBitPerfect(bitPerfectReady) {
+                        SettingsRow(
+                            icon = SfIcons.AutoAwesome,
+                            title = beatAwareTitle,
+                            subtitle = stringResource(R.string.beat_aware_subtitle),
+                            trailing = {
+                                IosSwitch(checked = beatAware, onCheckedChange = AppSettings::setBeatAwareTransitions)
+                            },
+                            onClick = { AppSettings.setBeatAwareTransitions(!beatAware) },
+                        )
+                    }
+                }
+                if (beatAware) {
+                    val phraseTitle = stringResource(R.string.beat_aware_phrase)
+                    row(phraseTitle, "phrase", "bars", "downbeat") {
+                        BypassedByBitPerfect(bitPerfectReady) {
+                            SettingsRow(
+                                icon = SfIcons.Tune,
+                                title = phraseTitle,
+                                subtitle = stringResource(R.string.beat_aware_phrase_subtitle),
+                                trailing = {
+                                    IosSwitch(checked = beatAwarePhraseAligned, onCheckedChange = AppSettings::setBeatAwarePhraseAligned)
+                                },
+                                onClick = { AppSettings.setBeatAwarePhraseAligned(!beatAwarePhraseAligned) },
+                            )
+                        }
+                    }
+                    val tempoTitle = stringResource(R.string.beat_aware_tempo)
+                    row(tempoTitle, "tempo", "speed", "stretch") {
+                        BypassedByBitPerfect(bitPerfectReady) {
+                            SettingsRow(
+                                icon = SfIcons.Tune,
+                                title = tempoTitle,
+                                subtitle = stringResource(R.string.beat_aware_tempo_subtitle),
+                                trailing = {
+                                    IosSwitch(checked = beatAwareTempoMatching, onCheckedChange = AppSettings::setBeatAwareTempoMatching)
+                                },
+                                onClick = { AppSettings.setBeatAwareTempoMatching(!beatAwareTempoMatching) },
+                            )
+                        }
+                    }
+                    val albumTitle = stringResource(R.string.beat_aware_album)
+                    row(albumTitle, "album", "gapless") {
+                        BypassedByBitPerfect(bitPerfectReady) {
+                            SettingsRow(
+                                icon = SfIcons.Tune,
+                                title = albumTitle,
+                                subtitle = stringResource(R.string.beat_aware_album_subtitle),
+                                trailing = {
+                                    IosSwitch(checked = beatAwareAlbumGapless, onCheckedChange = AppSettings::setBeatAwareAlbumGapless)
+                                },
+                                onClick = { AppSettings.setBeatAwareAlbumGapless(!beatAwareAlbumGapless) },
+                            )
+                        }
+                    }
                 }
             }
             val skipSilenceTitle = stringResource(R.string.skip_silence)

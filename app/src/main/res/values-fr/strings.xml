@@ -1458,4 +1458,12 @@
     <string name="bit_perfect_status_inexact">%1$s · inexact : cette source n\'est pas du PCM sans perte</string>
     <string name="bit_perfect_status_waiting">En attente d\'un morceau sans perte sur une sortie compatible</string>
     <string name="bit_perfect_status_unavailable">Indisponible pour ce morceau (%1$s)</string>
+    <string name="beat_aware_title">Transitions adaptées au rythme</string>
+    <string name="beat_aware_subtitle">Use trusted beat and phrase analysis; fall back to a normal crossfade when it is missing</string>
+    <string name="beat_aware_phrase">Transitions alignées sur les phrases</string>
+    <string name="beat_aware_phrase_subtitle">Enter and leave on downbeats in 8- or 16-bar phrases</string>
+    <string name="beat_aware_tempo">Synchroniser le tempo</string>
+    <string name="beat_aware_tempo_subtitle">Adjust the incoming track during a blend; off preserves both original tempos</string>
+    <string name="beat_aware_album">Lecture sans coupure dans les albums</string>
+    <string name="beat_aware_album_subtitle">Keep consecutive tracks from the same album almost seamless instead of mixing them</string>
 </resources>

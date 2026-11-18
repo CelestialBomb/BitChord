@@ -1435,4 +1435,12 @@
     <string name="bit_perfect_status_inexact">%1$s · 正確ではありません： このソースはロスレス PCM ではありません</string>
     <string name="bit_perfect_status_waiting">対応する出力でロスレスのトラックを待っています</string>
     <string name="bit_perfect_status_unavailable">このトラックでは利用できません（%1$s）</string>
+    <string name="beat_aware_title">ビートに合わせたトランジション</string>
+    <string name="beat_aware_subtitle">Use trusted beat and phrase analysis; fall back to a normal crossfade when it is missing</string>
+    <string name="beat_aware_phrase">フレーズに合わせたトランジション</string>
+    <string name="beat_aware_phrase_subtitle">Enter and leave on downbeats in 8- or 16-bar phrases</string>
+    <string name="beat_aware_tempo">テンポを合わせる</string>
+    <string name="beat_aware_tempo_subtitle">Adjust the incoming track during a blend; off preserves both original tempos</string>
+    <string name="beat_aware_album">アルバム内をギャップレス再生</string>
+    <string name="beat_aware_album_subtitle">Keep consecutive tracks from the same album almost seamless instead of mixing them</string>
 </resources>
