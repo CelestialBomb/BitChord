@@ -7,7 +7,6 @@ import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.util.Log
 import androidx.media3.common.Player
 import com.music.bitchord.BuildConfig
 import com.music.bitchord.auth.AuthStore
@@ -981,10 +980,7 @@ object AppSettings {
         exportDownloads.value = prefs.getBoolean(KEY_EXPORT_DOWNLOADS, false)
         syncDownloadedPlaylists.value = prefs.getBoolean(KEY_SYNC_DOWNLOADED_PLAYLISTS, false)
         crossfadeSeconds.value = prefs.getInt(KEY_CROSSFADE, 0)
-        prefs.getBoolean(KEY_SMART_FADE, false).let { stored ->
-            if (stored != smartFadeEnabled.value) traceAutomix(stored, "read from preferences")
-            smartFadeEnabled.value = stored
-        }
+        smartFadeEnabled.value = prefs.getBoolean(KEY_SMART_FADE, false)
         automixPerformanceMode.value = runCatching {
             AutomixPerformanceMode.valueOf(
                 prefs.getString(KEY_AUTOMIX_PERFORMANCE_MODE, null) ?: AutomixPerformanceMode.BALANCED.name,
@@ -1308,19 +1304,8 @@ object AppSettings {
     }
 
     fun setSmartFadeEnabled(value: Boolean) {
-        if (value != smartFadeEnabled.value) traceAutomix(value, "set")
         smartFadeEnabled.value = value
         prefs.edit().putBoolean(KEY_SMART_FADE, value).apply()
-    }
-
-    /**
-     * Dev builds only: names whatever changed Automix, at start-up, on a backup
-     * import or from the settings row, since it was once found off with nobody
-     * remembering turning it off (REBUILD-BRIEF issue 17).
-     */
-    private fun traceAutomix(value: Boolean, how: String) {
-        if (BuildConfig.FLAVOR != "dev") return
-        Log.i("BitChordTransitions", "Automix $how: $value", Throwable("caller"))
     }
 
     fun setAutomixPerformanceMode(value: AutomixPerformanceMode) {

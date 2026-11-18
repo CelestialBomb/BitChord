@@ -28,7 +28,12 @@ Decisions for the rebuild:
 - Album title and ID reach the planner only with Beat-aware on. The old branch always passed
   the title, and v1.9.1's live / spoken-word rule (R4) reads it, so Off was not v1.9.1.
 
-### Issue 17: Automix found off (investigated 18 Nov)
+### Issue 17: Automix found off. CLOSED 18 Nov, not a bug
+
+The user turned those settings off themselves on 17 Nov. Nothing in the app reset them. The
+Automix row stays as in v1.9.1. The dev-only Automix change log added while investigating
+was removed again (stale diagnostic). Kept: the rule that agents never edit the app's
+settings or data over adb. The investigation is below for reference.
 
 User report: Automix was off after a new dev build was installed.
 
@@ -64,12 +69,8 @@ What the evidence shows:
 
 Conclusion: the six settings were changed through the Settings screen, or by importing a
 backup, between the evening of 17 Nov and 15:03 on 18 Nov. It was not a reset on install,
-first launch, migration or auto-backup, so there is no code path to fix. Still open: asking
-the user whether Settings was opened, Performance mode changed or a backup imported in that
-window.
-Added: dev builds log every change to Automix with the caller (`Automix set` / `Automix read
-from preferences`, tag `BitChordTransitions`), including the value read at start-up and after
-an import. Next time it will say which path changed it.
+first launch, migration or auto-backup, so there is no code path to fix. Confirmed by the
+user: they changed them in Settings.
 
 # Before the rebuild (transitions branch)
 
