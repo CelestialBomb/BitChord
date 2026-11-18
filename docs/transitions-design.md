@@ -197,6 +197,7 @@ Confidence: PC's live tempo meter reports 0..1 with the same formula as `transit
 - Android skip-mid-blend fade: 120 ms (`BAIL_MS`), confirmed in 0.4.
 - 0.4 on device (Android): the failure record stops the end-of-song loop; Play next is mixed; album gapless and Mix on skip await a device test.
 - 0.5 on device (Android, over adb): the custom editor lays out and saves; Rise + High-pass, Gapless and No mix play as `custom`, `custom-gapless` (no gap, next song at 0 ms) and `custom-no-mix`; a saved pair plays as `custom` in normal playback; fetched head and tail windows decode (tail via the WebM stitch). Not checkable from logs: the volume and filter ramps, which need listening.
+- 0.7, Android `transitions-v2` stage 1 (engine): fixtures 001-013 pass, 001-008 unchanged at every commit; shared 154 and app 1250 tests pass. With Beat-aware off the planner gets v1.9.1's arguments and no album fields (R4 reads the album title). The failure gate never holds back the sleep timer's fade-out. On-device check pending.
 - Still to confirm: how PC's `Tempo::estimate` accepts a result; whether PC guards hi-res `Upgrade` during a blend, disables Automix during jams, and carries an album ID in queue items.
 
 ## 10. Changelog

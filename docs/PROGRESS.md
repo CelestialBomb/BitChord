@@ -12,7 +12,7 @@ reference (last commit `55713bb2`). Spec 0.7.
 | Stage (brief section 6) | Status |
 |---|---|
 | 0. Branch and docs (brief, CLAUDE.md, .clinerules, spec 0.7, this log) | Done |
-| 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | Approved plan (`C:\Users\kcbum\.claude\plans\read-docs-rebuild-brief-md-fully-plus-precious-valiant.md`), in progress |
+| 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done in code**, tests pass; phone check pending |
 | 2. Styles, blend length, Mix on skip; fixtures 014-018 | Not started |
 | 3. Automatic loop mix and the flush fix (dev-only adb hook) | Not started |
 | 4. Custom transitions; fixtures 019-023 | Not started |
@@ -27,6 +27,46 @@ Decisions for the rebuild:
   `player.shuffleModeEnabled`, which stays false under the app's own shuffle.
 - Album title and ID reach the planner only with Beat-aware on. The old branch always passed
   the title, and v1.9.1's live / spoken-word rule (R4) reads it, so Off was not v1.9.1.
+
+### Stage 1: base and engine (18 Nov)
+
+Plan: `C:\Users\kcbum\.claude\plans\read-docs-rebuild-brief-md-fully-plus-precious-valiant.md`.
+
+Tests (shared `:shared:jvmTest` / app `testDevDebugUnitTest`, locale test skipped as in CI):
+v1.9.1 baseline 122 in 17 suites / 1242 in 111 (1 skipped); after stage 1, 154 in 23 / 1250
+in 113 (1 skipped), 0 failures. Fixtures 001-008 pass unchanged at every commit. Dev APK built.
+
+| Commit | What |
+|---|---|
+| `dc685f78` | CI on `transitions-v2` |
+| `bbdb3c55` | Fixtures 001-008 and the harness (no style / custom fields yet) |
+| `0d71831f` | Planner options `strictConfidence`, `allowTempoStretch`; `BeatAwareConfig`; fixtures 009-011; octave-fold test |
+| `ddc5bb05` | R3 album match; fixtures 012-013 |
+| `78fb2cbc` | Settings (4 switches, 21 languages); `TransitionPlanning` |
+| `ab1adece` | Failure record: `TransitionFailureLog`, `FailureGate`, forward-only loop settle |
+| `03ed5b6c` | Queue hook and Previous |
+| `b350e225` | Provisional window; marker decision as shared `mixMarker` |
+
+Rewritten rather than ported:
+- The controller diff is hooks only. Planning, the failure gate and the log tag live in
+  `app/.../playback/transitions/` (`TransitionPlanning`, `FailureGate`, `TransitionLog`); the
+  marker decision is shared and tested (`MixMarker.kt`).
+- `TransitionFailureLog.clearPair` comes back with stage 4, its only user.
+- The sleep timer's fade-out is never held back by the failure record (the old branch's gate
+  sat before it).
+- No dev-only log helper yet: nothing in stage 1 logs heavily. The old branch's v1.9.1 log
+  lines that only moved to the new tag stay under `BitChordCrossfade`.
+
+Phone checklist (dev app, `logcat -s BitChordTransitions BitChordCrossfade`):
+1. Settings > Automix shows Beat-aware and, under it, its three switches.
+2. Beat-aware off: an ordinary Automix transition plays as before; `plan` lines end in `gate=NORMAL`.
+3. Beat-aware on, DRAMATICA with shuffle off: 1 -> 2 -> 3 gapless (`same-album-gapless`).
+   With the app's shuffle on: not gapless (`albumGapless=false shuffle=true`).
+4. Play next a never-played song: a dimmed window at once, full strength once analysed.
+5. Remove or move a Play next song: `queue changed` and `plans dropped`, and the window follows.
+6. A failing pair (e.g. Dream, Ivory -> I Can't Say Goodbye): no repeated tail. A failure logs
+   `failure ... -> next attempt: PLAIN_CROSSFADE`, then a plain crossfade.
+7. Previous on that pair: the next plan is `gate=NORMAL` again.
 
 ### Issue 17: Automix found off. CLOSED 18 Nov, not a bug
 
