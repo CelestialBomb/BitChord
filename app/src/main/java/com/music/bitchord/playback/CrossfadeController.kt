@@ -3745,6 +3745,7 @@ class CrossfadeController(
      * of preparing it.
      */
     private fun retire(player: ExoPlayer) {
+        Log.d(TRANSITION_TAG, "retire: stopping a player (phase=$phase)")
         player.stop()
         player.clearMediaItems()
         // This is the next transition's incoming player, and from its handoff
