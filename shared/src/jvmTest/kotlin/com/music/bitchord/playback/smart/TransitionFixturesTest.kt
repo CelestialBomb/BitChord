@@ -1,5 +1,6 @@
 package com.music.bitchord.playback.smart
 
+import com.music.bitchord.playback.transitions.BeatAwareConfig
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -66,19 +67,58 @@ class TransitionFixturesTest {
             outgoing = track("a", 120.0),
             incoming = track("b", 111.0),
         ),
+        "009-beat-aware-one-weak-grid" to FixtureCase(
+            name = "Beat-aware: one weak grid forces a plain crossfade",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true),
+            outgoing = track("a", 120.0),
+            incoming = track("b", 120.0).let {
+                it.copy(analysis = it.analysis.copy(beatConfidence = 0.1))
+            },
+        ),
+        "010-beat-aware-no-tempo-matching" to FixtureCase(
+            name = "Beat-aware: original tempos are preserved when matching is off",
+            settings = FixtureSettings(
+                beatAware = true,
+                phraseAligned = true,
+                tempoMatching = false,
+                albumGapless = true,
+            ),
+            outgoing = track("a", 120.0),
+            incoming = track("b", 111.0),
+        ),
+        "011-beat-aware-phrase-16-bars" to FixtureCase(
+            name = "Beat-aware: sixteen bars for the longer track, within the mix window",
+            settings = FixtureSettings(beatAware = true, phraseAligned = true, albumGapless = true),
+            outgoing = track("a", 120.0, duration = 300.0),
+            incoming = track("b", 120.0, duration = 300.0),
+        ),
     )
 
-    private fun planFor(case: FixtureCase): TransitionPlan = planTransition(
-        analysis = case.outgoing.analysis.toTrackAnalysis(case.outgoing.id),
-        nextAnalysis = case.incoming.analysis.toTrackAnalysis(case.incoming.id),
-        currentTrack = case.outgoing.toTransitionTrackInfo(),
-        nextTrack = case.incoming.toTransitionTrackInfo(),
-        currentTime = case.positionSeconds,
-        duration = case.outgoing.analysis.duration,
-        fadeSeconds = case.settings.fallbackFadeSeconds,
-        mode = if (case.settings.automix) CrossfadeMode.SMART else CrossfadeMode.STANDARD,
-        advanced = true,
-    )
+    private fun planFor(case: FixtureCase): TransitionPlan = with(
+        BeatAwareConfig(
+            enabled = case.settings.beatAware,
+            phraseAligned = case.settings.phraseAligned,
+            tempoMatching = case.settings.tempoMatching,
+            albumGapless = case.settings.albumGapless,
+        ).optionsFor(case.outgoing.analysis.duration),
+    ) {
+        planTransition(
+            analysis = case.outgoing.analysis.toTrackAnalysis(case.outgoing.id),
+            nextAnalysis = case.incoming.analysis.toTrackAnalysis(case.incoming.id),
+            currentTrack = case.outgoing.toTransitionTrackInfo(),
+            nextTrack = case.incoming.toTransitionTrackInfo(),
+            currentTime = case.positionSeconds,
+            duration = case.outgoing.analysis.duration,
+            fadeSeconds = case.settings.fallbackFadeSeconds,
+            mode = if (case.settings.automix) CrossfadeMode.SMART else CrossfadeMode.STANDARD,
+            advanced = true,
+            phraseBars = phraseBars,
+            albumSequential = albumSequential,
+            mixWindow = mixWindow,
+            strictConfidence = strictConfidence,
+            allowTempoStretch = allowTempoStretch,
+        )
+    }
 
     @Test
     fun plannerMatchesRecordedFixtures() {
