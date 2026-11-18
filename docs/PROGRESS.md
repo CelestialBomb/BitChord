@@ -20,7 +20,7 @@ reference (last commit `55713bb2`). Spec 0.7.
 | 6. New features (brief section 7) | Not started |
 
 Decisions for the rebuild:
-- 18 Nov (user): the failure record, the forward-only loop settle, the queue hook and the
+- 18 Nov (user): the failure record, the loop settle, the queue hook and the
   Previous reset run whether or not Beat-aware is on. They fix v1.9.1's own song-end replay,
   and the spec's principle 1 now lists them as exceptions.
 - Album gapless checks the app's shuffle (`QueueShuffle.enabled`). The old branch checked
@@ -43,7 +43,7 @@ in 113 (1 skipped), 0 failures. Fixtures 001-008 pass unchanged at every commit.
 | `0d71831f` | Planner options `strictConfidence`, `allowTempoStretch`; `BeatAwareConfig`; fixtures 009-011; octave-fold test |
 | `ddc5bb05` | R3 album match; fixtures 012-013 |
 | `78fb2cbc` | Settings (4 switches, 21 languages); `TransitionPlanning` |
-| `ab1adece` | Failure record: `TransitionFailureLog`, `FailureGate`, forward-only loop settle |
+| `ab1adece` | Failure record: `TransitionFailureLog`, `FailureGate`; loop settle on the target song only (its forward-only rule was wrong, see below) |
 | `03ed5b6c` | Queue hook and Previous |
 | `b350e225` | Provisional window; marker decision as shared `mixMarker` |
 
@@ -56,6 +56,31 @@ Rewritten rather than ported:
   sat before it).
 - No dev-only log helper yet: nothing in stage 1 logs heavily. The old branch's v1.9.1 log
   lines that only moved to the new tag stay under `BitChordCrossfade`.
+
+Phone check 2 (18 Nov, 17:26 build, Beat-aware off): 4 of 5 mixes fine. A Quick Picks loop mix
+`uFbiNCSR5V4 -> fCw7V--epV0` failed ("a sink was flushed", 17:30:16, about 20.3 s after takeover)
+and playback jumped back to the loop's start. The failure record then worked (plain crossfade,
+"this pair failed before").
+- **The jump back was our forward-only settle, not a seek.** The log said `loop settle after
+  failure: no seek to 366113ms (at 377820ms)`, then the outgoing sink logged `Unexpected audio
+  track timestamp discontinuity: expected 1000382177233, got 1000357401541`. During a loop mix
+  the outgoing decoder is parked at the takeover point (357.31 s) while the player reports the
+  mix's position (377.8 s). The rule took 366.1 s as backwards and skipped the seek, so the
+  decoder resumed from 357.4 s. 10 s later the session player hit `StuckPlayerException`
+  (`ERROR_CODE_TIMEOUT`), which counted as the pair's second failure. Fixed: the settle seeks
+  to the mix's position whenever the session is still on that song. The failure record (no
+  loop re-arm) is what prevents the replay. The old branch had the same rule; its 16 Nov Dream,
+  Ivory fix worked because of the record, not the direction check.
+- **Why the loop died: for stage 3.** It fits the earlier flushes (20.5 s after takeover on
+  16 and 17 Nov). Strong lead: Media3 1.11's stuck-player detector, which the app does not
+  configure. It fires after 10 s of "playing with no progress": the session player hit exactly
+  that here, and the incoming player's input is held the same way during a loop. An error on
+  the standby player stops it internally (ExoPlayer `stopInternal`, the stack seen on 17 Nov) and
+  never reaches the controller, which listens only to the session player. To prove it in stage 3,
+  log errors on the standby during a loop mix.
+- Also seen: "the sink never reached the loop" (`zme6S-rVJWg -> bY5AqVorG_8`, 37 ms after
+  arming) and "the decks would not build" (`fCw7V--epV0 -> zme6S-rVJWg`, the cached-copy problem
+  the old branch's 68e6e71f addresses). Both are stage 3.
 
 Phone checklist (dev app, `logcat -s BitChordTransitions BitChordCrossfade`):
 1. Settings > Automix shows Beat-aware and, under it, its three switches.

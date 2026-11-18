@@ -2930,6 +2930,7 @@ class CrossfadeController(
         if (failed) failureGate.noteFailure("loop mix: $reason", phase)
         // The song the settle point below is a position in, before [finish] forgets it.
         val targetSongId = failureGate.songOf(handedOff)
+        val failedPair = failureGate.pair
         loopBuildJob?.cancel()
         loopBuildJob = null
         loopAlignJob?.cancel()
@@ -2956,16 +2957,19 @@ class CrossfadeController(
         // discontinuity can't come back here as another bail.
         val sessionPlayer = if (wasHandedOff) into else out
         if (sessionPlayer != null && target != null && (settle || (!wasHandedOff && tookOver))) {
-            // v1.9.1 bug fix: a failed mix only ever moves forward, and only
-            // within the song the target is a position in. Seeking back to the
-            // loop put the playhead in the transition window again, the same mix
-            // re-armed, and the end of the song replayed until its time ran out.
-            val at = sessionPlayer.currentPosition
-            val onTargetSong = sessionPlayer.currentMediaItem?.mediaId == targetSongId
-            if (!failed || (onTargetSong && target > at)) {
+            // Needed even after a failure: once the loop has taken over, the
+            // outgoing decoder sits parked at the takeover point while the
+            // player reports the mix's position, so without this seek playback
+            // resumes from the loop's start. It cannot replay the song's end
+            // (v1.9.1's bug) because the failure record keeps a failed pair
+            // from arming the loop mix again. Only within the song the target
+            // is a position in: a player that already ran on into the next
+            // song must not be sent to the old one's position.
+            if (sessionPlayer.currentMediaItem?.mediaId == targetSongId) {
+                if (failed) TransitionLog.d("loop settle after failure: seek to ${target}ms (pair=$failedPair)")
                 sessionPlayer.seekTo(target)
             } else {
-                TransitionLog.w("loop settle after failure: no seek to ${target}ms (at ${at}ms, on target song=$onTargetSong)")
+                TransitionLog.w("loop settle: no seek to ${target}ms, the player moved on from that song")
             }
         }
     }
