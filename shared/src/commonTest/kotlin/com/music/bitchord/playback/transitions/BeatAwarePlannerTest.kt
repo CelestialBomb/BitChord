@@ -5,6 +5,7 @@ import com.music.bitchord.playback.smart.EnergySample
 import com.music.bitchord.playback.smart.TrackAnalysis
 import com.music.bitchord.playback.smart.TransitionStyle
 import com.music.bitchord.playback.smart.TransitionTrackInfo
+import com.music.bitchord.playback.smart.creditedArtists
 import com.music.bitchord.playback.smart.planTransition
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -120,5 +121,92 @@ class BeatAwarePlannerTest {
         )
         assertEquals(TransitionStyle.GAPLESS, plan.transitionStyle)
         assertEquals("before-gapless-window", plan.reason)
+    }
+
+    private fun albumPlan(
+        current: TransitionTrackInfo,
+        next: TransitionTrackInfo,
+        outgoing: TrackAnalysis = track(current.id, 140.0, duration = 82.3),
+        albumGapless: Boolean = true,
+        at: Double = 10.0,
+    ) = with(BeatAwareConfig(enabled = true, albumGapless = albumGapless).optionsFor(outgoing.duration)) {
+        planTransition(
+            analysis = outgoing,
+            nextAnalysis = track(next.id, 140.0),
+            currentTrack = current,
+            nextTrack = next,
+            currentTime = at,
+            duration = outgoing.duration,
+            mode = CrossfadeMode.SMART,
+            advanced = true,
+            phraseBars = phraseBars,
+            albumSequential = albumSequential,
+            mixWindow = mixWindow,
+            strictConfidence = strictConfidence,
+            allowTempoStretch = allowTempoStretch,
+        )
+    }
+
+    /** 82.3 s, the length of DRAMATICA's intro: the planner takes the longer of this and the analysis. */
+    private fun info(id: String, album: String, artist: String, albumId: String = "") =
+        TransitionTrackInfo(id, 82_300, album = album, artist = artist, albumId = albumId)
+
+    /** DRAMATICA, track 1 -> 2: an exit 14 s before the end used to turn the album into a DJ mix. */
+    @Test
+    fun interiorMixOutDoesNotBreakAlbumGapless() {
+        val intro = track("intro", 140.0, duration = 82.3).copy(outroStartTime = 72.0)
+        val current = info("intro", "DRAMATICA", "Juelz")
+        val next = info("higher", "DRAMATICA", "Juelz")
+
+        val mixed = albumPlan(current, next, intro, albumGapless = false)
+        assertTrue(mixed.transitionStyle != TransitionStyle.GAPLESS, "setting off: mixed (${mixed.reason})")
+        assertTrue(mixed.transitionEnd < 80.0, "setting off: ends at the interior exit, not the file end")
+
+        val gapless = albumPlan(current, next, intro)
+        assertEquals(TransitionStyle.GAPLESS, gapless.transitionStyle)
+        assertEquals("before-gapless-window", gapless.reason)
+        assertEquals(82.3 - 0.45, gapless.transitionStart, 1e-6, "the whole intro plays")
+        assertEquals("same-album-gapless", albumPlan(current, next, intro, at = 82.0).reason)
+    }
+
+    @Test
+    fun featuredArtistOnTheSameAlbumIsStillGapless() {
+        val plan = albumPlan(info("higher", "DRAMATICA", "Juelz"), info("mymymy", "dramatica ", "Juelz, Z3lla"))
+        assertEquals(TransitionStyle.GAPLESS, plan.transitionStyle)
+    }
+
+    @Test
+    fun sameTitleByDifferentArtistsIsNotOneAlbum() {
+        val plan = albumPlan(info("a", "Greatest Hits", "Artist A"), info("b", "Greatest Hits", "Artist B"))
+        assertTrue(plan.transitionStyle != TransitionStyle.GAPLESS, plan.reason)
+    }
+
+    @Test
+    fun albumIdsDecideWhenBothArePresent() {
+        val sameId = albumPlan(info("a", "Album (Deluxe)", "Artist", "id-1"), info("b", "Album", "Artist", "id-1"))
+        assertEquals(TransitionStyle.GAPLESS, sameId.transitionStyle, "same release despite different titles")
+
+        val otherId = albumPlan(info("a", "Album", "Artist", "id-1"), info("b", "Album", "Artist", "id-2"))
+        assertTrue(otherId.transitionStyle != TransitionStyle.GAPLESS, "two releases with one title")
+
+        val oneId = albumPlan(info("a", "Album", "Artist", "id-1"), info("b", "Album", "Artist"))
+        assertEquals(TransitionStyle.GAPLESS, oneId.transitionStyle, "one ID missing: titles and artists decide")
+    }
+
+    @Test
+    fun albumGaplessOffStillMixesAlbumSiblings() {
+        val plan = albumPlan(info("a", "DRAMATICA", "Juelz"), info("b", "DRAMATICA", "Juelz"), albumGapless = false)
+        assertTrue(plan.transitionStyle != TransitionStyle.GAPLESS, plan.reason)
+    }
+
+    @Test
+    fun creditedArtistsSplitsCommonSeparators() {
+        assertEquals(setOf("juelz", "z3lla"), creditedArtists("Juelz, Z3lla"))
+        assertEquals(setOf("a", "b", "c", "d"), creditedArtists("A feat. B & C x D"))
+        assertEquals(setOf("a", "b"), creditedArtists("A ft. B"))
+        assertEquals(setOf("a", "b"), creditedArtists("A featuring B"))
+        assertEquals(setOf("alex", "max"), creditedArtists("Alex with Max"))
+        assertEquals(setOf("xavier"), creditedArtists("Xavier"), "a name starting with x is not split")
+        assertEquals(emptySet(), creditedArtists("  "))
     }
 }
