@@ -33,6 +33,9 @@ import com.music.bitchord.playback.smart.TransitionPlan
 import com.music.bitchord.playback.smart.TransitionStyle
 import com.music.bitchord.playback.smart.echoTailSeconds
 import com.music.bitchord.playback.smart.planTransition
+import com.music.bitchord.playback.transitions.FailureGate
+import com.music.bitchord.playback.transitions.TransitionFailureLog
+import com.music.bitchord.playback.transitions.TransitionLog
 import com.music.bitchord.playback.transitions.TransitionPlanning
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -680,7 +683,7 @@ class CrossfadeController(
             // The listener moving the playhead is something no half-finished
             // crossfade should survive. Nothing this class does registers here
             // any more: the handoff is a role swap, not a seek.
-            if (reason == Player.DISCONTINUITY_REASON_SEEK) bail()
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) bailByListener("seek")
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -691,13 +694,13 @@ class CrossfadeController(
                 // does *not* fire when AutoPlay appends to the end, since the
                 // playing item doesn't change: extending the queue mid-fade is
                 // harmless and shouldn't cost the listener the blend.
-                Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> bail()
-                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> bail()
+                Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> bailByListener("queue replaced")
+                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> bailByListener("seek")
                 Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> ranOutBeforeHandoff()
             }
         }
 
-        override fun onPlayerError(error: PlaybackException) = bail()
+        override fun onPlayerError(error: PlaybackException) = failAndBail("player error ${error.errorCodeName}")
 
         // The session reached the end of a track [holdAtEnd] is holding, before
         // the handoff took it off that track. Only ever a late handoff, or a
@@ -717,7 +720,7 @@ class CrossfadeController(
             }
             // No blend to hand to. Let the queue move on as it would have.
             releaseHold()
-            if (phase == Phase.ARMING) bail()
+            if (phase == Phase.ARMING) failAndBail("outgoing reached its end while arming")
             held.play()
         }
     }
@@ -738,7 +741,8 @@ class CrossfadeController(
     private fun ranOutBeforeHandoff() {
         if (handedOff) return
         when (phase) {
-            Phase.ARMING, Phase.LOOP_ARMING, Phase.LOOP_RUNNING -> bail()
+            Phase.ARMING, Phase.LOOP_ARMING, Phase.LOOP_RUNNING ->
+                failAndBail("outgoing ran into the next song before the handoff")
             Phase.FADING -> {
                 val out = outgoing ?: return bail()
                 val into = incoming ?: return bail()
@@ -828,7 +832,43 @@ class CrossfadeController(
      * player this class has finished with.
      */
     fun onSkipRequested() {
-        if (phase != Phase.IDLE) bail()
+        if (phase != Phase.IDLE) bailByListener("skip")
+    }
+
+    // ---- Failure record (design doc 4.6; a v1.9.1 bug fix, Beat-aware or not) ----
+
+    private val failureGate = FailureGate()
+
+    /** A stop the listener asked for (skip, seek, queue edit): never a failure. */
+    private fun bailByListener(why: String) {
+        if (phase == Phase.IDLE) return
+        failureGate.asListener(why, phase) { bail() }
+    }
+
+    /** A transition that went wrong on its own: recorded against its pair, then abandoned. */
+    private fun failAndBail(what: String) {
+        if (phase == Phase.IDLE) return
+        failureGate.noteFailure(what, phase)
+        bail()
+    }
+
+    /** Names the pair a failure of the transition starting now is held against. */
+    private fun markActive(out: ExoPlayer, nextIndex: Int, kind: String) {
+        failureGate.begin(
+            outgoingId = out.currentMediaItem?.mediaId.orEmpty(),
+            incomingId = out.getMediaItemAt(nextIndex).mediaId,
+            kind = kind,
+            atMs = out.currentPosition,
+            durationMs = out.duration,
+        )
+    }
+
+    /** What the failure record allows [player]'s next transition; null without a next song. */
+    private fun failureVerdict(player: ExoPlayer): TransitionFailureLog.Verdict? {
+        val current = player.currentMediaItem?.mediaId ?: return null
+        val nextIndex = player.nextMediaItemIndex
+        if (nextIndex == C.INDEX_UNSET) return null
+        return failureGate.verdict(current, player.getMediaItemAt(nextIndex).mediaId)
     }
 
     // ---- Ticker -------------------------------------------------------------
@@ -1022,6 +1062,10 @@ class CrossfadeController(
         if (configuredFadeMs() <= 0L) return
         val fade = fadeFor(duration)
         if (fade <= 0L) return
+        // Failure record (v1.9.1 bug fix): a crossfade that failed twice for this
+        // pair is not armed again; the song plays out and the queue moves on.
+        // The sleep timer's fade-out is no transition, so it is never held back.
+        if (!SleepTimer.afterTrack.value && failureVerdict(player) == TransitionFailureLog.Verdict.NONE) return
 
         player.currentMediaItem?.mediaId?.let { plannedTransition = it to duration - fade }
         val remaining = duration - player.currentPosition
@@ -1078,6 +1122,18 @@ class CrossfadeController(
         // by asking for it, and without that a paused track plans blind.
         requestAnalysisAround(player, duration)
 
+        // Failure record (v1.9.1 bug fix): a pair whose transition failed is
+        // never retried as it was. Once: a plain crossfade only; twice: nothing
+        // is armed. Without this the 250 ms re-planning re-armed the same
+        // failing mix at the same point.
+        val gate = failureVerdict(player)
+        if (gate == TransitionFailureLog.Verdict.NONE) {
+            AppSettings.smartTransitionWindow.value = null
+            plannedTransition = null
+            return
+        }
+        val plainOnly = gate == TransitionFailureLog.Verdict.PLAIN_CROSSFADE
+
         // Only used before analysis lands, or when the evidence is too weak
         // for more than a plain fade (see [TransitionTier.PLAIN_CROSSFADE]):
         // once real analysis is available, [planTransition] sizes the overlap
@@ -1098,9 +1154,11 @@ class CrossfadeController(
 
         // Beat-aware settings; all defaults (the v1.9.1 planner) when it is off.
         val options = TransitionPlanning.options(duration)
+        // After a failure the planner is shown no analysis, which is its own
+        // rule for a plain crossfade at the listener's length (R5).
         val plan = planTransition(
-            analysis = currentAnalysis,
-            nextAnalysis = nextAnalysis,
+            analysis = if (plainOnly) TrackAnalysis() else currentAnalysis,
+            nextAnalysis = if (plainOnly) TrackAnalysis() else nextAnalysis,
             currentTrack = TransitionPlanning.trackInfo(currentItem, duration),
             nextTrack = TransitionPlanning.trackInfo(nextItem, nextDuration),
             currentTime = player.currentPosition / 1000.0,
@@ -1120,7 +1178,7 @@ class CrossfadeController(
             "|cue=${plan.incomingCueTime}|rate=${plan.incomingPlaybackRate}" +
             "|vocalOverlap=${"%.2f".format(Locale.ROOT, plan.vocalOverlap)}" +
             "|advanced=$advanced|lock=${plan.phaseLock}|variant=${plan.filterVariant}|echo=${plan.echoSeconds}" +
-            "|blocked=${plan.blocked}|policy=${plan.policyReasons.joinToString(",")}"
+            "|blocked=${plan.blocked}|policy=${plan.policyReasons.joinToString(",")}|gate=$gate"
         if (verdict != lastPlanVerdict) {
             lastPlanVerdict = verdict
             Log.d(
@@ -1140,9 +1198,17 @@ class CrossfadeController(
         publishMixPreview(currentItem, nextItem, duration, nextDuration, currentAnalysis, nextAnalysis, analysisState, plan, advanced)
 
         // The loop mix first: a pair it can do never reaches the blend below.
-        val loop = loopPlanFor(
-            player, currentItem, nextItem, currentAnalysis, nextAnalysis, duration, nextDuration, analysisState,
-        )
+        // Never for a pair that failed before (failure record).
+        val loop = if (plainOnly) {
+            loopPlanned = null
+            loopPlanKey = null
+            noteLoopVerdict("${currentItem.mediaId}->${nextItem.mediaId}", null, "this pair failed before")
+            null
+        } else {
+            loopPlanFor(
+                player, currentItem, nextItem, currentAnalysis, nextAnalysis, duration, nextDuration, analysisState,
+            )
+        }
         if (loop != null && nextStreamReady(nextItem)) {
             val loopStartMs = (loop.out.loopStart * 1000).roundToLong()
             AppSettings.smartTransitionWindow.value = TransitionWindow(
@@ -1444,6 +1510,7 @@ class CrossfadeController(
         outgoing = out
         incoming = into
         outgoingItemIndex = out.currentMediaItemIndex
+        markActive(out, nextIndex, if (smart) "automix blend" else "standard crossfade")
 
         val t0 = SystemClock.elapsedRealtimeNanos()
         val items = (0 until out.mediaItemCount).map { out.getMediaItemAt(it) }
@@ -1627,7 +1694,7 @@ class CrossfadeController(
         // A standby that never got the incoming track ready has nothing to fade
         // up. Give up and let the queue move on plainly rather than fading into
         // silence.
-        if (expired && !ready) return bail()
+        if (expired && !ready) return failAndBail("incoming not ready by the arm deadline")
 
         // Both sinks write seconds ahead of the speaker. The standby fills its
         // whole buffer while it waits here, so its filter has to be at the
@@ -1819,7 +1886,7 @@ class CrossfadeController(
         // failure on the incoming one would otherwise go unheard: its position
         // stops, the blend parks at whatever mix it had reached, and the
         // outgoing track runs out under it.
-        if (!handedOff && player.playbackState == Player.STATE_IDLE) return bail()
+        if (!handedOff && player.playbackState == Player.STATE_IDLE) return failAndBail("incoming player went idle mid-blend")
 
         // Faders act at the speaker; everything in the DSP chain — the filters
         // and the headroom trim — acts where each sink is writing, its lead
@@ -2551,6 +2618,7 @@ class CrossfadeController(
         outgoing = out
         incoming = into
         outgoingItemIndex = out.currentMediaItemIndex
+        markActive(out, nextIndex, "loop mix")
         armDeadline = SystemClock.elapsedRealtime() + LOOP_BUILD_TIMEOUT_MS
         holdAtEnd(out)
         val sampleRate = outPort.sampleRate
@@ -2800,7 +2868,12 @@ class CrossfadeController(
      */
     private fun loopBail(reason: String, settle: Boolean = true) {
         val session = loopSession
-        Log.d(TAG, "loop mix stops ($phase): $reason")
+        // A pause is the listener's; so is anything that came through [bailByListener].
+        val failed = !failureGate.byListener && !reason.startsWith("paused")
+        Log.d(TAG, "loop mix stops ($phase, pair=${failureGate.pair}, failed=$failed): $reason")
+        if (failed) failureGate.noteFailure("loop mix: $reason", phase)
+        // The song the settle point below is a position in, before [finish] forgets it.
+        val targetSongId = failureGate.songOf(handedOff)
         loopBuildJob?.cancel()
         loopBuildJob = null
         loopAlignJob?.cancel()
@@ -2827,7 +2900,17 @@ class CrossfadeController(
         // discontinuity can't come back here as another bail.
         val sessionPlayer = if (wasHandedOff) into else out
         if (sessionPlayer != null && target != null && (settle || (!wasHandedOff && tookOver))) {
-            sessionPlayer.seekTo(target)
+            // v1.9.1 bug fix: a failed mix only ever moves forward, and only
+            // within the song the target is a position in. Seeking back to the
+            // loop put the playhead in the transition window again, the same mix
+            // re-armed, and the end of the song replayed until its time ran out.
+            val at = sessionPlayer.currentPosition
+            val onTargetSong = sessionPlayer.currentMediaItem?.mediaId == targetSongId
+            if (!failed || (onTargetSong && target > at)) {
+                sessionPlayer.seekTo(target)
+            } else {
+                TransitionLog.w("loop settle after failure: no seek to ${target}ms (at ${at}ms, on target song=$onTargetSong)")
+            }
         }
     }
 
@@ -3024,6 +3107,7 @@ class CrossfadeController(
         outgoing = null
         incoming = null
         handedOff = false
+        failureGate.end()
         outgoingItemIndex = C.INDEX_UNSET
         queuedItemCount = 0
         incomingCueTimeMs = 0L
