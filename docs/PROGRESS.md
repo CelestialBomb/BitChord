@@ -12,7 +12,7 @@ reference (last commit `55713bb2`). Spec 0.7.
 | Stage (brief section 6) | Status |
 |---|---|
 | 0. Branch and docs (brief, CLAUDE.md, .clinerules, spec 0.7, this log) | Done |
-| 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done in code**, tests pass; phone check pending |
+| 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done in code**, tests pass. Phone checklist: item 2 done (settle bug found and fixed in `5995624c`, installed 18 Nov 17:39, re-check pending); items 1 and 3-7 to do. Next session: resume the checklist, then plan stage 2 |
 | 2. Styles, blend length, Mix on skip; fixtures 014-018 | Not started |
 | 3. Automatic loop mix and the flush fix (dev-only adb hook) | Not started |
 | 4. Custom transitions; fixtures 019-023 | Not started |
