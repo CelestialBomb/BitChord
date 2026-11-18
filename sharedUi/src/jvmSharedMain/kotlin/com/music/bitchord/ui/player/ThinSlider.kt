@@ -93,6 +93,11 @@ fun ThinSlider(
      * unplayed bar so the mix is visible before it arrives.
      */
     transitionWindow: ClosedFloatingPointRange<Float>? = null,
+    /**
+     * The window is a guess while a song of the pair is still being analysed:
+     * drawn dimmed, brightening to full once the plan is measured.
+     */
+    transitionWindowProvisional: Boolean = false,
     idleHeight: Dp = 7.dp,
     activeHeight: Dp = 12.dp,
     activeColor: Color = Color.White.copy(alpha = 0.92f),
@@ -138,7 +143,11 @@ fun ThinSlider(
         if (transitionWindow != null) shownWindow = transitionWindow
     }
     val windowAlpha by animateFloatAsState(
-        targetValue = if (transitionWindow != null) 1f else 0f,
+        targetValue = when {
+            transitionWindow == null -> 0f
+            transitionWindowProvisional -> PROVISIONAL_WINDOW_ALPHA
+            else -> 1f
+        },
         animationSpec = tween(durationMillis = WINDOW_FADE_MS, easing = FastOutSlowInEasing),
         label = "transitionWindowAlpha",
     )
@@ -291,6 +300,9 @@ private const val WINDOW_FEATHER_STEPS = 6
 
 /** How long the Automix window takes to fade in or out. */
 private const val WINDOW_FADE_MS = 500
+
+/** A provisional window at under half strength: there, but plainly not final. */
+private const val PROVISIONAL_WINDOW_ALPHA = 0.4f
 
 /**
  * One beat clock for everything that pulses with an Automix blend — the seek bar's fill and
