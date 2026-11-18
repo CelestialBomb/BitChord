@@ -63,5 +63,8 @@ before building on them, and don't discard them.
   to unlock it and turn on Stay awake.
 - adb: `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`
 - Install: `adb -s R3GL10HRFBK install -r <apk>`
+- Never change the app's settings or data behind the user's back (no `run-as`
+  edits of `shared_prefs`, no `pm clear`). If a test needs a setting changed,
+  ask the user to change it in the app. Reading them is fine.
 - Transition logs: `adb -s R3GL10HRFBK logcat -s BitChordTransitions BitChordCrossfade`
   (`BitChordTransitions` has one line per plan decision, arm, bail, cancel and failure).

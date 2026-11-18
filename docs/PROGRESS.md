@@ -25,6 +25,51 @@ Decisions for the rebuild:
   and the spec's principle 1 now lists them as exceptions.
 - Album gapless checks the app's shuffle (`QueueShuffle.enabled`). The old branch checked
   `player.shuffleModeEnabled`, which stays false under the app's own shuffle.
+- Album title and ID reach the planner only with Beat-aware on. The old branch always passed
+  the title, and v1.9.1's live / spoken-word rule (R4) reads it, so Off was not v1.9.1.
+
+### Issue 17: Automix found off (investigated 18 Nov)
+
+User report: Automix was off after a new dev build was installed.
+
+What the evidence shows:
+- **The install is not the cause.** `dumpsys package com.dev.bitchord`: firstInstallTime
+  15 Nov 18:16, lastUpdateTime 18 Nov 16:06. firstInstallTime survived, so every install
+  was `adb install -r`: an update that keeps app data. No uninstall, no `pm clear`, and
+  Android auto-backup only restores on a fresh install.
+- **Automix was already off before that install.** Session `cf06026d` read the phone's
+  `bitchord_settings.xml` at 15:43 (18 Nov) and found `smart_fade_enabled=false`. Its
+  scripted Previews from 15:10 never logged an Automix plan. The install came at 16:04-16:06.
+  No build was installed between 17 Nov 15:18 and 18 Nov 16:04.
+- **More than Automix changed**, between 17 Nov ~15:25 and 18 Nov 15:03:
+  - `smart_fade_enabled` went true → false.
+  - `automix_performance_mode` went BALANCED → PERFORMANCE.
+  - `beat_aware_transitions` went true → false. 17 Nov plans were phrase-aligned, so Beat-aware
+    and phrase were on.
+  - `beat_aware_phrase_aligned`, `beat_aware_tempo_matching` and `beat_aware_album_gapless`
+    were all stored as false. Their defaults are true, and these rows only show while Automix
+    and Beat-aware are both on.
+- **Nothing in the code writes these on launch, update or migration.** On both branches the
+  only writers are the Settings rows (`SettingsSheet`; the Automix row toggles on a tap
+  anywhere along it) and a backup import (`Backup.importFrom` → `AppSettings.importPrefs`,
+  which clears and replaces the whole settings file). The TV screens also write Automix, but
+  they are not on the phone. The app runs in one process, so there is no stale second copy of
+  the preferences writing over the file.
+- **An agent edited the settings file.** At 15:43 on 18 Nov session `cf06026d` force-stopped
+  the app and set `smart_fade_enabled` back to true with `run-as … sed -i` on
+  `bitchord_settings.xml`, without asking. That is not the cause, but it hid the state. The
+  rules now forbid it (CLAUDE.md / .clinerules).
+- The Beat-aware switches read true again from 16:54 (the file's last write; plans at 16:55
+  are phrase-aligned).
+
+Conclusion: the six settings were changed through the Settings screen, or by importing a
+backup, between the evening of 17 Nov and 15:03 on 18 Nov. It was not a reset on install,
+first launch, migration or auto-backup, so there is no code path to fix. Still open: asking
+the user whether Settings was opened, Performance mode changed or a backup imported in that
+window.
+Added: dev builds log every change to Automix with the caller (`Automix set` / `Automix read
+from preferences`, tag `BitChordTransitions`), including the value read at start-up and after
+an import. Next time it will say which path changed it.
 
 # Before the rebuild (transitions branch)
 
