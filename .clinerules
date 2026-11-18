@@ -1,0 +1,67 @@
+# BitChord Android: beat-aware transitions, rebuild (`transitions-v2`)
+
+This branch is worked on by both Cline and Claude Code. `CLAUDE.md` holds the
+same instructions for Claude Code; change both together.
+
+`transitions-v2` is a clean rebuild from v1.9.1. The old `transitions` branch is
+the reference: read it with `git show` / `git diff`, never rewrite, delete or
+force-push it.
+
+## At the start of every session
+
+1. Read `docs/REBUILD-BRIEF.md` (why the rebuild, the issue list, what worked,
+   the stage order).
+2. Read `docs/transitions-design.md` (the spec; shared with the PC fork).
+3. Read `docs/PROGRESS.md` (where the work stands, what is next).
+4. Run `git log --oneline -15` and `git status`.
+
+Uncommitted changes may be the other agent's unfinished work: review them
+before building on them, and don't discard them.
+
+## How each stage runs (brief section 0)
+
+1. Plan the stage and wait for the user's "go".
+2. Port what was verified on `transitions`, rewrite what is messy.
+3. Keep the fixtures (001-023) and tests as their features return; add new ones.
+4. All tests pass after every commit.
+5. Build and install the dev app, then give the user a short phone checklist.
+
+## After each step
+
+1. Update `docs/PROGRESS.md`: what changed, what was verified and how, what is
+   next, open questions.
+2. Commit, in small steps, with the same prefixes as the history:
+   `feat(transitions):`, `fix(transitions):`, `test(transitions):`, `docs:`, `ci:`.
+
+## Rules
+
+- Never commit keys, tokens, add-on URLs, keystores or `local.properties`.
+  They stay in `.gitignore` or GitHub secrets. CI signs nothing. Run a secrets
+  scan before every push.
+- Off means unchanged: with "Beat-aware transitions" off the app behaves like
+  v1.9.1, except the bug fixes the design doc lists in section 1.
+- Fixes to v1.9.1's own code are minimal and commented as such.
+- Lean code: no dead code, unused settings or strings, no stale diagnostics.
+  Debug hooks and heavy logs are dev-build only.
+- Respect "Wi-Fi only downloads" for every fetch and analysis.
+- Keep the AGPL headers on files ported from Orchard (design doc section 8).
+- Commands: git, adb.exe and gradlew only.
+
+## Commands
+
+- Shared tests: `./gradlew :shared:jvmTest -Pbitchord.bundleWear=false`
+- App tests: `./gradlew testDevDebugUnitTest --init-script .github/ci/skip-upstream-locale-test.init.gradle -Pbitchord.bundleWear=false`
+- Dev APK: `./gradlew assembleDevDebug -Pbitchord.bundleWear=false`
+  (output in `app/build/outputs/apk/dev/debug/`)
+- In PowerShell, quote the property: `'-Pbitchord.bundleWear=false'`,
+  otherwise it is split at the dot.
+
+## Device
+
+- Test on the dev app `com.dev.bitchord`, never `com.music.bitchord`.
+- Phone: SM-S948U1, serial `R3GL10HRFBK`. Before on-device checks, ask the user
+  to unlock it and turn on Stay awake.
+- adb: `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`
+- Install: `adb -s R3GL10HRFBK install -r <apk>`
+- Transition logs: `adb -s R3GL10HRFBK logcat -s BitChordTransitions BitChordCrossfade`
+  (`BitChordTransitions` has one line per plan decision, arm, bail, cancel and failure).
