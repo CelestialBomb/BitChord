@@ -94,6 +94,17 @@ Neither style/length nor the skip blend touches those paths.
 - Stage 3 candidate (user request): after a failed loop, continue the incoming song from where the
   mix reached instead of the plain crossfade restarting it from 0.
 
+**User decisions (19 Nov, after check 9 passed at 03:02):**
+- Continuing the incoming song after a failed loop: stage 3. The arming failure: stage 3, top
+  priority.
+- The -1.2 s jump back at the loop's release sounds like the song restarting: a bug, not a nice-to-have.
+- The incoming song's opening repeating (its own loop) also felt like a restart: consider making
+  the incoming loop shorter or optional.
+- Stage 3 order: (a) arming failure, (b) handover offset / jump back at release, (c) keep the player
+  position moving during loop mixes and restore Media3's 10 s stuck default, (d) failure rule and
+  continuing the incoming song after a failed loop, (e) pluggable transition kinds and the tempo
+  notes from the brief.
+
 **Check 9:** a skip blend is over in 2-4 s and hands over at once, while the "Mixing" label and
 echo tail outlast it. A tap usually came after `finish()` had cleared the view, so the popup
 found nothing. That is inferred: taps aren't logged, but it is the only path to that message.
