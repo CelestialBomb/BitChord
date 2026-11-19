@@ -246,6 +246,12 @@ class LoopMixTest {
         val midSong = assertNotNull(plan(analysis(124.0, 200.0), analysis(124.0, 180.0), sungIn = sungOpening))
         assertTrue(midSong.inn.loopStart >= 12.0)
         assertTrue(midSong.inRepeats)
+        // A loop from the song's second bar is still its opening.
+        val secondBar = assertNotNull(
+            plan(analysis(124.0, 200.0), analysis(124.0, 180.0), sungIn = listOf(LoopMix.Span(0.0, 2.0))),
+        )
+        assertEquals(0.5 + 60.0 / 124 * 4, secondBar.inn.loopStart, 1e-9)
+        assertTrue(!secondBar.inRepeats)
     }
 
     @Test

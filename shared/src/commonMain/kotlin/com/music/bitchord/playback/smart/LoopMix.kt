@@ -144,7 +144,7 @@ object LoopMix {
         val totalBars: Int,
         /**
          * Whether the incoming deck repeats its loop. False when that loop is
-         * the song's opening (it starts within the first bar): repeating the
+         * the song's opening (it starts within the first 4 bars): repeating the
          * first bars of a song sounds like the song restarting, so the deck
          * plays on through them at the mix's tempo instead.
          */
@@ -240,9 +240,13 @@ object LoopMix {
         )
     }
 
-    /** A loop that starts before the song's second bar line is its opening. */
+    /**
+     * A loop that starts within the song's first [LOOP_BARS] bars is its
+     * opening: repeating bars 2-5 sounds as much like a restart as bars 1-4
+     * (19 Nov: I Can't Say Goodbye, loop from its second bar).
+     */
     private fun isOpening(loopStart: Double, grid: Grid): Boolean =
-        loopStart < max(grid.anchor, 0.0) + grid.barSec - grid.beatSec / 2
+        loopStart < max(grid.anchor, 0.0) + LOOP_BARS * grid.barSec - grid.beatSec / 2
 
     /** The fallback constant grid: a beat length, and a bar line to count from. */
     private class Grid(val beatSec: Double, val anchor: Double) {

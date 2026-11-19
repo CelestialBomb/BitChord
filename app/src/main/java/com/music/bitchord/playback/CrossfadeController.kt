@@ -3044,7 +3044,13 @@ class CrossfadeController(
         ) {
             startLoopAlignment(session)
         }
-        if (!handedOff && m >= session.clock.handoffAt) {
+        // The session moves to the incoming player only once that player is
+        // playing. It may start late in the mix (where its own 0:00 lines up
+        // with the deck, [LoopMix.incomingStart]); a session handed to a player
+        // that has not started reads as paused, which stopped the mix (19 Nov
+        // 03:49: "handoff at in=0ms", then "loop mix stops: paused").
+        val handoffAt = max(session.clock.handoffAt, session.inStartAt + LOOP_ALIGN_SETTLE_SECONDS)
+        if (!handedOff && m >= handoffAt && loopIncomingStarted && into.isPlaying) {
             handOff(out, into)
         }
         publishLoopBeat(session, m, now)
