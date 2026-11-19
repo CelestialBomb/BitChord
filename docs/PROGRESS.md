@@ -14,7 +14,8 @@ reference (last commit `55713bb2`). Spec 0.7.
 | 0. Branch and docs (brief, CLAUDE.md, .clinerules, spec 0.7, this log) | Done |
 | 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done and pushed** 19 Nov. Phone checklist 1-7 pass (2 after the settle fix `5995624c`); item 2's no-mix retest goes to stage 3 |
 | 2. Styles, blend length, Mix on skip; fixtures 014-018 | **Done** 19 Nov, tests pass. Phone checks 1, 3-9 pass (8 by code, 9 after `553831cd`); 2 partial: the styles work, and the loop-mix failures seen during it go to stage 3. Not pushed yet |
-| 3. Automatic loop mix and the flush fix (dev-only adb hook) | In progress (plan `C:\Users\kcbum\.claude\plans\transitions-v2-stage-3.md`, go 19 Nov). Done and phone-checked: (a), (b) + the handover fix. Done, on the phone since 04:08, not yet tested: (c) 10 s stuck default + adb hook, (d) failure rule + continue fade, cache wait / wording, stop-site log. **Next session:** test with the adb hook (each suspect, before and after the incoming song's entry), then (e) refactor + tempo seam, docs, push |
+| 3. Automatic loop mix and the flush fix (dev-only adb hook) | **Done and pushed** 19 Nov. (a)-(d) and (e) phone-checked, incl. forced failures before the entry, after it and after the handover. Moving the loop mix's playing half out of the controller is left for stage 5 |
+| Next | Stage 4 (custom transitions): plan it and wait for the user's go |
 | 4. Custom transitions; fixtures 019-023 | Not started |
 | 5. Cleanup and independent review | Not started |
 | 6. New features (brief section 7) | Not started |
@@ -108,9 +109,12 @@ Installed 12:12 for a "loops still sound the same" listen. Spec 4.6, 4.9, reason
 changelog updated.
 
 **Stage 3 phone checklist** (the capture runs throughout):
-1. Loop mixes still sound as before the refactor (Flamingo -> i don't belong here: mid-song loop
-   repeats; Dream, Ivory -> I Can't Say Goodbye: "(plays through, its opening)").
-2. The `plan` log lines carry `kind=`.
+1. PASS (user, 12:12 build): loop mixes sound as before the refactor (Flamingo -> i don't belong
+   here repeats mid-song; Dream, Ivory -> I Can't Say Goodbye plays through its opening); log
+   `loop mix done: incoming -0.00ms against the deck`.
+2. PASS: the `plan` lines carry `kind=` (`CROSSFADE`, `BEAT_BLEND`, ...).
+
+Stage 3 done and pushed 19 Nov.
 
 New issue 20 (brief): the quality upgrade's swap leaves a noticeable gap (`swap seam: 292ms of
 silence`, Lifer 11:48:27). v1.9.1 behaviour.
