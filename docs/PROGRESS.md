@@ -43,6 +43,26 @@ one on the song's opening; keep the adb test hook, dev builds only.
 Tests: shared 184, app 1257 (1 skipped). Still with the 240 s stuck timeout; (c) restores 10 s once
 the phone shows the release is on the deck and no long silence is inserted.
 
+**Phone check of (a) + (b), 03:28 build:** 1, 3, 4 PASS (user): loop mixes in a row, Flamingo -> i
+don't belong here, Mahiru No Tsuki -> Are you coming back?, Hugs -> Lifer. The first alignments are
+now small (-156 ms, then 0.00 ms), and a loop released `incoming +0.01ms against the deck`.
+2 FAIL (03:49, Dream, Ivory -> I Can't Say Goodbye): the song was left paused at 0:01. Caused by
+`105013ed`: the incoming player now starts where its 0:00 lines up with the deck (29 s into a 41 s
+mix), but the session still moved to it mid-ramp (24 s), `handoff at in=0ms`. The driver read the
+unstarted player as paused (`loop mix stops: paused`) and the settle left it at the loop's
+position. Also, its loop starts on bar 2, so the first-bar opening rule repeated it. Fixed in
+`ef721367`: hand over only once the incoming player plays (and no earlier than its start + 1.2 s);
+an opening loop is one starting within the first 4 bars.
+
+| Commit | What |
+|---|---|
+| `9d9ebd56` | (d) Failure rule by kind: `NO_LOOP` / `PLAIN_CROSSFADE` / `NONE`, never less strict |
+| `e5ae8ce0` | (d) After a loop fails past its entry, a 1 s fade continues into the incoming song at its mix position (`loop-fallback-continue`) |
+| `cd00709d` | Ported: wait for a complete cached copy ("waiting on <song>'s audio in the cache"); "waiting on the audio output" for an unconfigured sink |
+| `ef721367` | The handover waits for the incoming player; the 4-bar opening rule |
+
+Installed 03:58 (all of the above). Tests: shared 187, app 1259 (1 skipped).
+
 ### Stage 2: style, blend length, Mix on skip (19 Nov)
 
 Plan: `C:\Users\kcbum\.claude\plans\transitions-v2-stage-2.md` (user's go 19 Nov).
