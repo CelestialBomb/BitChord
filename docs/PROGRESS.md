@@ -14,7 +14,7 @@ reference (last commit `55713bb2`). Spec 0.7.
 | 0. Branch and docs (brief, CLAUDE.md, .clinerules, spec 0.7, this log) | Done |
 | 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done and pushed** 19 Nov. Phone checklist 1-7 pass (2 after the settle fix `5995624c`); item 2's no-mix retest goes to stage 3 |
 | 2. Styles, blend length, Mix on skip; fixtures 014-018 | **Done** 19 Nov, tests pass. Phone checks 1, 3-9 pass (8 by code, 9 after `553831cd`); 2 partial: the styles work, and the loop-mix failures seen during it go to stage 3. Not pushed yet |
-| 3. Automatic loop mix and the flush fix (dev-only adb hook) | In progress (plan `C:\Users\kcbum\.claude\plans\transitions-v2-stage-3.md`, go 19 Nov). Done: (a) `cf85b64a`, (b) `105013ed`, standby error log `7a3079c9`; phone check of (a)+(b) before (c) |
+| 3. Automatic loop mix and the flush fix (dev-only adb hook) | In progress (plan `C:\Users\kcbum\.claude\plans\transitions-v2-stage-3.md`, go 19 Nov). Done and phone-checked: (a), (b) + the handover fix. Done, on the phone since 04:08, not yet tested: (c) 10 s stuck default + adb hook, (d) failure rule + continue fade, cache wait / wording, stop-site log. **Next session:** test with the adb hook (each suspect, before and after the incoming song's entry), then (e) refactor + tempo seam, docs, push |
 | 4. Custom transitions; fixtures 019-023 | Not started |
 | 5. Cleanup and independent review | Not started |
 | 6. New features (brief section 7) | Not started |
