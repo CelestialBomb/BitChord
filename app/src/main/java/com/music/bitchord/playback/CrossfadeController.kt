@@ -1212,7 +1212,7 @@ class CrossfadeController(
         val options = TransitionPlanning.options(duration)
         // After a failure the planner is shown no analysis, which is its own
         // rule for a plain crossfade at the listener's length (R5).
-        val plan = planTransition(
+        val plannerPlan = planTransition(
             analysis = if (plainOnly) TrackAnalysis() else currentAnalysis,
             nextAnalysis = if (plainOnly) TrackAnalysis() else nextAnalysis,
             currentTrack = TransitionPlanning.trackInfo(currentItem, duration),
@@ -1228,9 +1228,13 @@ class CrossfadeController(
             strictConfidence = options.strictConfidence,
             allowTempoStretch = options.allowTempoStretch,
         )
+        // The listener's Mix style and Blend length; every fallback stays as planned.
+        val plan = TransitionPlanning.restyle(plannerPlan, duration, player.currentPosition)
         // One line per distinct verdict rather than one per 250ms tick, so the
         // log says what the planner decided for this pair without burying it.
         val verdict = "${plan.reason}|${plan.transitionStyle}|fade=${plan.fadeMs}" +
+            "|style=${TransitionPlanning.styleKey()}" +
+            (if (plan !== plannerPlan) "(planner ${plannerPlan.transitionStyle} ${plannerPlan.fadeMs}ms)" else "") +
             "|cue=${plan.incomingCueTime}|rate=${plan.incomingPlaybackRate}" +
             "|vocalOverlap=${"%.2f".format(Locale.ROOT, plan.vocalOverlap)}" +
             "|advanced=$advanced|lock=${plan.phaseLock}|variant=${plan.filterVariant}|echo=${plan.echoSeconds}" +

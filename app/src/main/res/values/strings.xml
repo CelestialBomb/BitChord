@@ -286,6 +286,18 @@
     <string name="beat_aware_tempo_subtitle">Adjust the incoming track during a blend; off preserves both original tempos</string>
     <string name="beat_aware_album">Gapless within albums</string>
     <string name="beat_aware_album_subtitle">Keep consecutive tracks from the same album almost seamless instead of mixing them</string>
+    <!-- Automix style and length (transitions-design.md 0.4). English only for now: translations to do before an upstream PR. -->
+    <string name="automix_style">Mix style</string>
+    <string name="automix_style_subtitle">How Automix blends songs. Pairs that can\'t be mixed still get a plain crossfade</string>
+    <string name="automix_style_smooth">Smooth</string>
+    <string name="automix_style_fade">Fade</string>
+    <string name="automix_style_rise">Rise</string>
+    <string name="automix_style_quick">Quick</string>
+    <string name="automix_length">Blend length</string>
+    <string name="automix_length_subtitle">Shorter or longer mixes, always inside the last and first 30 seconds</string>
+    <string name="automix_length_short">Short</string>
+    <string name="automix_length_medium">Medium</string>
+    <string name="automix_length_long">Long</string>
     <string name="skip_silence">Skip silence</string>
     <string name="skip_silence_subtitle">Trim gaps longer than a second</string>
     <string name="skip_silence_float_subtitle">Unavailable on 32-bit float output</string>

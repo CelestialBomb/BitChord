@@ -4,6 +4,7 @@ import androidx.media3.common.MediaItem
 import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.playback.EXTRA_ALBUM_ID
 import com.music.bitchord.playback.QueueShuffle
+import com.music.bitchord.playback.smart.TransitionPlan
 import com.music.bitchord.playback.smart.TransitionTrackInfo
 
 /**
@@ -12,7 +13,8 @@ import com.music.bitchord.playback.smart.TransitionTrackInfo
  * planner-facing code, so it stays one call there.
  *
  * With Beat-aware off everything here is the v1.9.1 answer: default options and
- * no album fields on the tracks.
+ * no album fields on the tracks. The style and length apply with or without
+ * Beat-aware, and at their defaults (Smooth, Medium) change nothing.
  */
 internal object TransitionPlanning {
 
@@ -52,6 +54,22 @@ internal object TransitionPlanning {
             albumId = if (withAlbum) albumIdOf(item) else "",
         )
     }
+
+    /**
+     * The listener's Mix style and Blend length over the planner's answer
+     * (design doc section 2). Applied whenever Automix is on; only a mix the
+     * planner chose is restyled, and Smooth + Medium return [plan] itself.
+     */
+    fun restyle(plan: TransitionPlan, durationMs: Long, positionMs: Long): TransitionPlan = applyMixStyle(
+        plan,
+        AppSettings.automixStyle.value,
+        AppSettings.automixBlendLength.value,
+        durationSeconds = durationMs / 1000.0,
+        currentTime = positionMs / 1000.0,
+    )
+
+    /** For the plan log line: `smooth/medium`. */
+    fun styleKey(): String = "${AppSettings.automixStyle.value.key}/${AppSettings.automixBlendLength.value.key}"
 
     /** The album ID the queue row was built with (see `toSong`), or empty. */
     fun albumIdOf(item: MediaItem): String =
