@@ -135,8 +135,10 @@ Phone checklist (dev app, `logcat -s BitChordTransitions BitChordCrossfade`):
 
 The user turned those settings off themselves on 17 Nov. Nothing in the app reset them. The
 Automix row stays as in v1.9.1. The dev-only Automix change log added while investigating
-was removed again (stale diagnostic). Kept: the rule that agents never edit the app's
-settings or data over adb. The investigation is below for reference.
+was removed again (stale diagnostic). The rule that came out of it (agents never edit the
+app's settings over adb) was replaced on 19 Nov by the user's testing rule: settings may be
+changed during tests, but each change is announced and everything is restored afterwards.
+The investigation is below for reference.
 
 User report: Automix was off after a new dev build was installed.
 

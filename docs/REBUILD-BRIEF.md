@@ -16,7 +16,7 @@ Purpose: rebuild the transitions work cleanly on a new branch from the v1.9.1 ba
 - **Original-app bugs:** problems in the v1.9.1 code itself (the shuffle flag, sink defaults, the quality-upgrade swap) get minimal, clearly commented fixes.
 - **Docs:** carry CLAUDE.md, .clinerules, PROGRESS.md and the design doc over, updated. Bump the design doc to 0.7. Keep docs/smart-automix-plan.md if it exists.
 
-## 1. Rules (unchanged)
+## 1. Rules
 
 - **Secrets:** never commit keys, tokens, addon URLs or keystores. Run a secrets scan before every push.
 - **Commands:** git, adb.exe and gradlew only.
@@ -24,6 +24,7 @@ Purpose: rebuild the transitions work cleanly on a new branch from the v1.9.1 ba
   - Test on `com.dev.bitchord`, not the regular `com.music.bitchord`.
   - The phone is an SM-S948U1, serial R3GL10HRFBK.
   - Before on-device checks, ask me to unlock it and turn on Stay awake.
+  - **Testing:** you may change app settings during tests, but tell me each change and restore everything afterwards.
 - **Wi-Fi only:** respect the Wi-Fi-only setting for every fetch and analysis.
 - **Licences:**
   - BitChord is GPL-3.0. The planner code ported from Orchard is AGPL: keep its notices, and flag compatibility before any upstream PR.
@@ -50,7 +51,16 @@ Purpose: rebuild the transitions work cleanly on a new branch from the v1.9.1 ba
 14. **Smarter Automix:** choose the best transition per pair (loop, echo-out, etc.).
 15. **Phone AI hardware:** use the NPU to make analysis smarter.
 16. **Analyse speed:** Analyse playlist is slow. That's acceptable.
-17. **Automix setting:** Automix was found OFF one morning, and I'm not sure I turned it off. Check for settings resets.
+17. **Automix setting:** Automix was found OFF one morning, and I'm not sure I turned it off. Check for settings resets. *Closed 19 Nov: I turned it off myself; not a bug.*
+18. **Tempo & pitch:** speed and pitch controls like OuterTune / InnerTune / OpenTune.
+    - "Tempo & pitch" in the player menu: speed 0.5–2×, pitch ±12 semitones.
+    - A link switch: on = speed changes pitch, like a record.
+    - Reset.
+    - Global for all songs. A badge on the player when not 1× / 0 st, with one-tap reset.
+    - When: section 7, right after the rebuild.
+19. **Album Play shuffled:** Play on an album or playlist page should play in order (turning the app's shuffle off). Only the Shuffle button shuffles.
+    - v1.9.1 behaviour: Play takes the app's saved shuffle state, so album gapless never applies once shuffle has been on.
+    - When: stage 5, as a minimal, commented original-app fix.
 
 ## 3. Features built on `transitions` (port these)
 
@@ -198,17 +208,29 @@ Purpose: rebuild the transitions work cleanly on a new branch from the v1.9.1 ba
 1. **Base and engine:** planner, rules, failure record, queue hook, album gapless. Bring the fixtures and tests along.
 2. **Stage 1:** styles, length, Mix on skip.
 3. **Loop mix:** the automatic loop mix, plus the flush fix, proven with the forced swap.
+   - Also in this stage:
+     - **Flush investigation:** a dev-only adb hook that fires each suspect mid-mix (section 4).
+     - **Failure rule:** a failed loop mix only drops the loop (a normal crossfade next time); only a failed plain crossfade drops to no mix.
+     - **Item 7 lead:** after Previous, the loop's clock reads past the loop start right after arming ("the sink never reached the loop").
+     - **Item 2 retest:** the Quick Picks pair that got no mix after the app restarted.
+   - **Transition kinds as pieces:** keep loop mix, beat blend, filter, echo-out, gapless and crossfade as separate pluggable pieces with a common shape, so Smart Automix can score them later. No scoring yet.
+   - **Tempo design:** a user speed multiplier (issue 18) stacks with the mix's tempo changes. The planner uses the effective BPM, and a pitch shift updates the effective key.
 4. **Stage 2:** custom transitions (store, backup, loader, page, editor, Preview, custom loop).
 5. **Cleanup and review:** a cleanup pass, then an independent review (/ultrareview).
+   - Also: issue 19, album Play in order (a minimal, commented original-app fix).
 6. **New features:** section 7.
 
 ## 7. Future features (after the rebuild)
 
-1. **B1, window analysis:**
+1. **Tempo & pitch** (issue 18):
+   - Player menu: speed 0.5–2×, pitch ±12 semitones, a link switch (speed changes pitch like a record), reset.
+   - Global for all songs; a badge on the player when not 1× / 0 st, with one-tap reset.
+   - Mixes stack with it (stage 3 tempo design).
+2. **B1, window analysis:**
    - Analyse each song's ends from ranged fetches: beats, vocal and level on the last 60 s and first 45 s.
    - Analyse playlist then makes songs loop-ready.
    - Add M4A/AAC support.
-2. **Smart Automix:**
+3. **Smart Automix:**
    - Setting: Off / Shadow / On.
    - Candidates: loop mix, beat blend, filter sweep, echo-out, downbeat cut, gapless, plain crossfade.
    - Hard vetoes.
@@ -216,13 +238,13 @@ Purpose: rebuild the transitions work cleanly on a new branch from the v1.9.1 ba
    - Echo-out: a new planner variant reusing rideEchoOut.
    - Logging: one log line per pair.
    - Learning: from skips and saved custom transitions; opt-in, on-device and included in backup.
-3. **On-device ML:**
+4. **On-device ML:**
    - Runtime spike: ORT on the CPU vs ORT with NNAPI/QNN vs LiteRT on the NPU/GPU. Keep ORT unless LiteRT is 2–3× better.
    - An InferenceBackend that falls back NPU → GPU → CPU.
    - A small vocal-activity gate, distilled from Open-Unmix.
    - Beat This! stays bundled.
    - A ModelStore for downloads: manifest, SHA-256, Wi-Fi only, resumable.
-4. **Karaoke:** a vocal slider using Open-Unmix umxhq, downloaded on demand.
-5. **PC catch-up** (BitChord-PC-Continued, branch `transitions`): port the spec, real blend timing and Beat This! ONNX.
-6. **Upstream:** translations, then the upstream PR. A thin Morphe patch is optional.
-7. **Search/recommendations:** last, or skip.
+5. **Karaoke:** a vocal slider using Open-Unmix umxhq, downloaded on demand.
+6. **PC catch-up** (BitChord-PC-Continued, branch `transitions`): port the spec, real blend timing and Beat This! ONNX.
+7. **Upstream:** translations, then the upstream PR. A thin Morphe patch is optional.
+8. **Search/recommendations:** last, or skip.
