@@ -142,6 +142,13 @@ object LoopMix {
         val exitBars: Int,
         /** Outgoing bars from the outgoing loop's start to the incoming loop's release. */
         val totalBars: Int,
+        /**
+         * Whether the incoming deck repeats its loop. False when that loop is
+         * the song's opening (it starts within the first bar): repeating the
+         * first bars of a song sounds like the song restarting, so the deck
+         * plays on through them at the mix's tempo instead.
+         */
+        val inRepeats: Boolean = true,
     ) {
         /** The tempo the ramp arrives at, in outgoing beats per minute. */
         val targetBpm: Double get() = inn.bpm / fold
@@ -229,8 +236,13 @@ object LoopMix {
             rampBars = rampBars,
             exitBars = totalBars - ENTER_BARS - rampBars,
             totalBars = totalBars,
+            inRepeats = !isOpening(inPick.start, inGrid),
         )
     }
+
+    /** A loop that starts before the song's second bar line is its opening. */
+    private fun isOpening(loopStart: Double, grid: Grid): Boolean =
+        loopStart < max(grid.anchor, 0.0) + grid.barSec - grid.beatSec / 2
 
     /** The fallback constant grid: a beat length, and a bar line to count from. */
     private class Grid(val beatSec: Double, val anchor: Double) {
@@ -506,7 +518,10 @@ object LoopMix {
 
         /** The incoming player takes over here, at this track position. */
         val elementAt: Double get() = beatTimes[beats + settleBeats]
-        val elementTrackTime: Double get() = plan.inn.loopEnd + (elementAt - releaseAt)
+        val elementTrackTime: Double get() = inPlayedAtRelease + (elementAt - releaseAt)
+
+        /** Where the incoming song is at the release: its loop end, or further on when it played through. */
+        val inPlayedAtRelease: Double get() = if (plan.inRepeats) plan.inn.loopEnd else inReleasePosition
 
         /** The unwrapped track position each deck plays at beat [k] (for k up to [beats]). */
         fun outPositionAt(k: Int): Double = plan.out.loopStart + k * plan.out.beatSec
@@ -533,6 +548,20 @@ object LoopMix {
     enum class Side { OUT, IN }
 
     /**
+     * When and where the incoming player starts, silent: mix second and track
+     * second, on the deck's own timeline ([Clock.elementTrackTime] at
+     * [Clock.elementAt]). [lead] into the mix at the earliest, and never before
+     * the song's 0:00. v1.9.1 clamped an early start to 0:00 and made up the
+     * difference with inserted silence (15.6 s on one pair), during which the
+     * player's position stood still: Media3 then called it stuck, and the
+     * corrections that followed left the release seconds off the deck.
+     */
+    fun incomingStart(clock: Clock, lead: Double): Pair<Double, Double> {
+        val at = max(lead, clock.elementAt - clock.elementTrackTime)
+        return at to max(0.0, clock.elementTrackTime - (clock.elementAt - at))
+    }
+
+    /**
      * Where a song is in its own seconds [t] seconds after t0, from the same beat
      * clock the decks run on (so it loops and follows the tempo ramp exactly).
      * Null where that side isn't sounding from a deck: either side before t0,
@@ -541,14 +570,14 @@ object LoopMix {
     fun positionAt(clock: Clock, side: Side, t: Double): Double? {
         val plan = clock.plan
         if (t < 0) return null
-        if (side == Side.IN && t >= clock.releaseAt) return plan.inn.loopEnd + (t - clock.releaseAt)
+        if (side == Side.IN && t >= clock.releaseAt) return clock.inPlayedAtRelease + (t - clock.releaseAt)
         if (side == Side.OUT && t >= clock.releaseAt) return null
         val (k, frac) = clock.beatAt(t)
         if (k >= clock.beats) return null
-        return if (side == Side.OUT) {
-            plan.out.loopStart + ((k % plan.out.beats) + frac) * plan.out.beatSec
-        } else {
-            plan.inn.loopStart + (((k * plan.fold) % plan.inn.beats) + frac * plan.fold) * plan.inn.beatSec
+        return when {
+            side == Side.OUT -> plan.out.loopStart + ((k % plan.out.beats) + frac) * plan.out.beatSec
+            plan.inRepeats -> plan.inn.loopStart + (((k * plan.fold) % plan.inn.beats) + frac * plan.fold) * plan.inn.beatSec
+            else -> plan.inn.loopStart + (k + frac) * plan.fold * plan.inn.beatSec
         }
     }
 

@@ -3,7 +3,6 @@ package com.music.bitchord.playback.loopmix
 import android.util.Log
 import com.music.bitchord.playback.smart.LoopMix
 import kotlin.math.abs
-import kotlin.math.max
 import kotlin.math.roundToLong
 
 /** A stretch of a song decoded for a deck: planar, at the renderer's rate, from track second [start]. */
@@ -60,14 +59,15 @@ class LoopMixSession private constructor(
         outPort.presentedSeconds(nowNanos, playing)?.let { it - plan.out.loopStart }
 
     /**
-     * Where the incoming player has to start: [STARTUP_LEAD] into the mix,
-     * silent, at the track position that would put it on the deck's own
-     * timeline. Before the song's start it starts at 0, and the silence the
-     * alignment inserts makes up the rest.
+     * Where the incoming player has to start: [STARTUP_LEAD] into the mix at
+     * the earliest, silent, at the track position that puts it on the deck's
+     * own timeline, and never before the song's 0:00 ([LoopMix.incomingStart]).
      */
     fun planIncomingStart() {
-        inStartAt = STARTUP_LEAD
-        inStartTrack = max(0.0, handoverTrack - (clock.elementAt - inStartAt))
+        LoopMix.incomingStart(clock, STARTUP_LEAD).let { (at, track) ->
+            inStartAt = at
+            inStartTrack = track
+        }
     }
 
     /**
@@ -168,6 +168,9 @@ class LoopMixSession private constructor(
                 ),
             )
             // Incoming: its loop until the release, then on from the loop end at rate 1.
+            // A loop on the song's opening is never repeated (plan.inRepeats): the
+            // deck lets go at its loop end, which the renderer reads as playing on
+            // through the unwrapped positions, at the mix's tempo, then at rate 1.
             val inKnotFrames = DoubleArray(beats + 1) { clock.beatTimes[it] * sr }
             val inKnotPositions = DoubleArray(beats + 1) { samplesOf(inRegion, clock.inPositionAt(it)) }
             renderer.setDeck(
@@ -178,7 +181,7 @@ class LoopMixSession private constructor(
                     regionStart = inRegion.start,
                     loopStart = samplesOf(inRegion, plan.inn.loopStart).roundToLong(),
                     loopEnd = samplesOf(inRegion, plan.inn.loopEnd).roundToLong(),
-                    releaseAt = samplesOf(inRegion, clock.inReleasePosition),
+                    releaseAt = samplesOf(inRegion, if (plan.inRepeats) clock.inReleasePosition else plan.inn.loopEnd),
                     knotFrames = inKnotFrames,
                     knotPositions = inKnotPositions,
                     runOn = true,

@@ -56,6 +56,9 @@ class LoopMixTest {
     /** Synced lyrics with nothing sung in the searched stretches: every loop is clear. */
     private val clear = emptyList<LoopMix.Span>()
 
+    /** A sung opening: the incoming loop is then found mid-song, where it repeats. */
+    private val sungOpening = listOf(LoopMix.Span(0.0, 12.0))
+
     private fun plan(
         out: TrackAnalysis,
         inn: TrackAnalysis,
@@ -150,7 +153,8 @@ class LoopMixTest {
 
     @Test
     fun clockWrapsOnlyAtLoopEndsAndTheIncomingSongArrivesAtItsOwnSpeed() {
-        val plan = assertNotNull(plan(analysis(111.0, 200.0), analysis(169.0, 180.0)))
+        val plan = assertNotNull(plan(analysis(111.0, 200.0), analysis(169.0, 180.0), sungIn = sungOpening))
+        assertTrue(plan.inRepeats)
         val clock = LoopMix.Clock(plan)
         // each beat's position follows from the last at the beat's own rate; a wrap only at a loop end
         for (side in LoopMix.Side.entries) {
@@ -195,7 +199,7 @@ class LoopMixTest {
 
     @Test
     fun positionStaysInsideEachLoopWrappingBackToItsStart() {
-        val plan = assertNotNull(plan(analysis(111.0, 200.0), analysis(169.0, 180.0)))
+        val plan = assertNotNull(plan(analysis(111.0, 200.0), analysis(169.0, 180.0), sungIn = sungOpening))
         val clock = LoopMix.Clock(plan)
         var sawWrap = false
         var last = -1.0
@@ -214,10 +218,51 @@ class LoopMixTest {
 
     @Test
     fun theIncomingSongGoesOnFromItsLoopEndInRealTimeAndTheOutgoingOneStops() {
-        val plan = assertNotNull(plan(analysis(111.0, 200.0), analysis(169.0, 180.0)))
+        val plan = assertNotNull(plan(analysis(111.0, 200.0), analysis(169.0, 180.0), sungIn = sungOpening))
         val clock = LoopMix.Clock(plan)
         assertNull(LoopMix.positionAt(clock, LoopMix.Side.OUT, clock.releaseAt + 0.1))
         assertEquals(plan.inn.loopEnd, LoopMix.positionAt(clock, LoopMix.Side.IN, clock.releaseAt)!!, 1e-9)
+        assertEquals(clock.elementTrackTime, LoopMix.positionAt(clock, LoopMix.Side.IN, clock.elementAt)!!, 1e-9)
+    }
+
+    @Test
+    fun theIncomingPlayerStartsOnTheDecksTimelineNeverBeforeItsSongsStart() {
+        for (sung in listOf(clear, sungOpening)) {
+            val plan = assertNotNull(plan(analysis(111.0, 200.0), analysis(169.0, 180.0), sungIn = sung))
+            val clock = LoopMix.Clock(plan)
+            val (at, track) = LoopMix.incomingStart(clock, lead = 0.5)
+            assertTrue(at >= 0.5)
+            assertTrue(track >= 0.0)
+            // started there, it reaches the handover position exactly when the deck does: no silence to insert
+            assertEquals(clock.elementTrackTime, track + (clock.elementAt - at), 1e-9)
+        }
+    }
+
+    @Test
+    fun anIncomingLoopOnTheSongsOpeningIsNotRepeatedOneMidSongIs() {
+        val opening = assertNotNull(plan(analysis(124.0, 200.0), analysis(124.0, 180.0)))
+        assertEquals(0.5, opening.inn.loopStart, 1e-9)
+        assertTrue(!opening.inRepeats)
+        val midSong = assertNotNull(plan(analysis(124.0, 200.0), analysis(124.0, 180.0), sungIn = sungOpening))
+        assertTrue(midSong.inn.loopStart >= 12.0)
+        assertTrue(midSong.inRepeats)
+    }
+
+    @Test
+    fun anOpeningPlaysThroughForwardAndTheIncomingSongArrivesWhereItGotTo() {
+        val plan = assertNotNull(plan(analysis(111.0, 200.0), analysis(169.0, 180.0)))
+        assertTrue(!plan.inRepeats)
+        val clock = LoopMix.Clock(plan)
+        var last = -1.0
+        var t = 0.0
+        while (t < clock.elementAt) {
+            val position = LoopMix.positionAt(clock, LoopMix.Side.IN, t)!!
+            assertTrue(position > last, "the incoming song never goes back (at $t s)")
+            last = position
+            t += 0.05
+        }
+        assertEquals(clock.inReleasePosition, LoopMix.positionAt(clock, LoopMix.Side.IN, clock.releaseAt)!!, 1e-9)
+        assertEquals(clock.inReleasePosition + (clock.elementAt - clock.releaseAt), clock.elementTrackTime, 1e-9)
         assertEquals(clock.elementTrackTime, LoopMix.positionAt(clock, LoopMix.Side.IN, clock.elementAt)!!, 1e-9)
     }
 

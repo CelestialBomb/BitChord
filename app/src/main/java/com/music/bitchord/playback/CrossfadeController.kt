@@ -2834,7 +2834,8 @@ class CrossfadeController(
             }
             return "${pick.bars}-bar, clear by $by"
         }
-        return "out ${side(plan.out)} · in ${side(plan.inn)} · $tempo$fold"
+        val inPlays = if (plan.inRepeats) "" else " (plays through, its opening)"
+        return "out ${side(plan.out)} · in ${side(plan.inn)}$inPlays · $tempo$fold"
     }
 
     /**
