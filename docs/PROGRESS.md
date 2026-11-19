@@ -13,7 +13,7 @@ reference (last commit `55713bb2`). Spec 0.7.
 |---|---|
 | 0. Branch and docs (brief, CLAUDE.md, .clinerules, spec 0.7, this log) | Done |
 | 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done and pushed** 19 Nov. Phone checklist 1-7 pass (2 after the settle fix `5995624c`); item 2's no-mix retest goes to stage 3 |
-| 2. Styles, blend length, Mix on skip; fixtures 014-018 | **Done in code** 19 Nov, tests pass; phone check pending |
+| 2. Styles, blend length, Mix on skip; fixtures 014-018 | **Done** 19 Nov, tests pass. Phone checks 1, 3-9 pass (8 by code, 9 after `553831cd`); 2 partial: the styles work, and the loop-mix failures seen during it go to stage 3. Not pushed yet |
 | 3. Automatic loop mix and the flush fix (dev-only adb hook) | Not started |
 | 4. Custom transitions; fixtures 019-023 | Not started |
 | 5. Cleanup and independent review | Not started |
@@ -57,7 +57,7 @@ skip blends is not carried over.
 | 2 | PARTIAL | `style=fade/medium`, `rise/short` etc. on `plan` lines and restyled plans (`(planner DJ_BLEND ...)`). Two loop mixes failed during it (below) |
 | 3-7 | PASS | `skip skip-blend` with `skip blend starts` and `handoff at in=...` about 30 ms later; `skip-cut-busy` / `skip-cut-rapid` / `skip-cut-guard (paused / this pair failed before)` / `skip-cut-off` as expected |
 | 8 | PASS by code | ListenBrainz isn't set up on the phone. A skip blend hands over with `skipped`, so `onTrackBecameCurrent(previousEnded = false)`: no finished listen is submitted and "sleep after this song" doesn't fire |
-| 9 | FAIL, fixed in `553831cd` | The overview said "No Automix transition coming up" |
+| 9 | PASS after `553831cd` | First run: the overview said "No Automix transition coming up". Retest: it shows the skip blend |
 
 **The "repeat bug" (check 2) was two loop mixes breaking, not the settle being bypassed.**
 Neither style/length nor the skip blend touches those paths.
@@ -72,6 +72,27 @@ Neither style/length nor the skip blend touches those paths.
   loop mix (32 bars at 40 BPM, about 192 s). This is the stage 3 flush lead: the same 10 s timer
   on the standby, whose errors the controller never sees, explains the ~20.5 s flush. Whether it
   cures the flush shows on the phone; stage 3 still builds the adb hook to prove it.
+
+**Retest on the 02:48 build (`9304e202`, `553831cd`):**
+- Check 9: **PASS** (user). Tapping "Mixing" during a skip blend shows the skip blend.
+- Dream, Ivory -> I Can't Say Goodbye (02:51, 02:53): the user heard a failure and a restart from
+  0. In the log, both loop mixes were planned (after 3 s waiting on lyrics) and ended `loop mix
+  done`, with no failure and no player error. Likely heard: the incoming loops its first 4 bars by
+  design, and it is released 1.2 s behind the deck (`loop align: left at -1207ms`), which is the
+  brief's handover-offset item. Stage 3.
+- "This pair failed before" at ~03:00: new failures in this process (the record is memory-only).
+  X8glgP5Lwfk -> TWm_LfKekC0 at 02:57:35 and, after Previous cleared it, 02:58:40;
+  06Un6dHGegg -> ou-2UkMrPJA at 02:59:44. All were "the sink never reached the loop", 5-30 ms after
+  arming.
+- Loop mixes, 02:18-03:01: before the timeout fix, 2 stuck-timer failures (02:22, 02:26) and
+  1 clean; since the fix, 2 clean and no stuck or flush failures; on both builds, 6 arming
+  failures ("never reached the loop"). The arming failure is now the main loop problem, and
+  the Previous lead doesn't hold (Dream, Ivory armed fine after Previous at 02:53).
+- User question: 240 s only during loop mixes? Not cleanly now. It is a builder setting, and the
+  error stops the player before app code sees it. Clean version, stage 3: keep the player's
+  position moving during a loop mix, then restore the 10 s default.
+- Stage 3 candidate (user request): after a failed loop, continue the incoming song from where the
+  mix reached instead of the plain crossfade restarting it from 0.
 
 **Check 9:** a skip blend is over in 2-4 s and hands over at once, while the "Mixing" label and
 echo tail outlast it. A tap usually came after `finish()` had cleared the view, so the popup
