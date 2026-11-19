@@ -974,7 +974,13 @@ class CrossfadeController(
         // On the beat when the next song was ready in time; at once otherwise.
         val beatAt = fadeEndMs - fadeMs
         if (decision.action == SkipAction.BLEND && positionMs(out) < beatAt - SKIP_BEAT_EARLY_MS) return
-        TransitionLog.d("skip blend starts at ${out.currentPosition}ms, ${waited}ms after the press (${decision.reason})")
+        TransitionLog.d(
+            if (skipBlender.isSkip) {
+                "skip blend starts at ${out.currentPosition}ms, ${waited}ms after the press (${decision.reason})"
+            } else {
+                "loop fallback fade starts at ${out.currentPosition}ms, ${waited}ms after the failure"
+            },
+        )
         // Where the blend really starts, now that it has: [mixGeometry] and the
         // mix view read the span from here.
         fadeEndMs = out.currentPosition + fadeMs
@@ -3283,8 +3289,6 @@ class CrossfadeController(
      * forces one suspect into the loop mix in flight, so its failure and the
      * fallback after it can be heard on demand. The log names what was fired
      * and what the mix did next.
-     *  - `stall-incoming`: holds the incoming player's position for 12 s
-     *    (12 s of inserted silence), past Media3's 10 s stuck check;
      *  - `stop-standby`: stops whichever player is not the session's;
      *  - `replace-item`: replaces the session's playing item with a copy, in
      *    place, as the quality upgrade does.
@@ -3298,14 +3302,13 @@ class CrossfadeController(
         val m = session.mixSeconds(System.nanoTime(), outgoing?.isPlaying ?: false)
         TransitionLog.w("debug $suspect fired at mix ${m?.let { "%.2f".format(Locale.ROOT, it) }}s (phase=$phase, handedOff=$handedOff)")
         when (suspect) {
-            "stall-incoming" -> session.inPort.requestShift(-12L * session.inPort.sampleRate.coerceAtLeast(1))
             "stop-standby" -> (if (handedOff) outgoing else incoming)?.stop()
             "replace-item" -> active().let { player ->
                 player.currentMediaItem?.let { item ->
                     player.replaceMediaItem(player.currentMediaItemIndex, item.buildUpon().setTag(System.nanoTime()).build())
                 }
             }
-            else -> TransitionLog.w("debug: unknown suspect '$suspect' (stall-incoming, stop-standby, replace-item)")
+            else -> TransitionLog.w("debug: unknown suspect '$suspect' (stop-standby, replace-item)")
         }
     }
 
