@@ -43,6 +43,7 @@ import com.music.bitchord.playback.transitions.SkipAction
 import com.music.bitchord.playback.transitions.SkipBlender
 import com.music.bitchord.playback.transitions.SkipDecision
 import com.music.bitchord.playback.transitions.TransitionFailureLog
+import com.music.bitchord.playback.transitions.TransitionKind
 import com.music.bitchord.playback.transitions.TransitionLog
 import com.music.bitchord.playback.transitions.TransitionPlanning
 import com.music.bitchord.playback.transitions.mixMarker
@@ -1408,7 +1409,7 @@ class CrossfadeController(
         val plan = TransitionPlanning.restyle(plannerPlan, duration, player.currentPosition)
         // One line per distinct verdict rather than one per 250ms tick, so the
         // log says what the planner decided for this pair without burying it.
-        val verdict = "${plan.reason}|${plan.transitionStyle}|fade=${plan.fadeMs}" +
+        val verdict = "${plan.reason}|${plan.transitionStyle}|kind=${TransitionKind.of(plan)}|fade=${plan.fadeMs}" +
             "|style=${TransitionPlanning.styleKey()}" +
             (if (plan !== plannerPlan) "(planner ${plannerPlan.transitionStyle} ${plannerPlan.fadeMs}ms)" else "") +
             "|cue=${plan.incomingCueTime}|rate=${plan.incomingPlaybackRate}" +
@@ -1744,12 +1745,12 @@ class CrossfadeController(
         outgoing = out
         incoming = into
         outgoingItemIndex = out.currentMediaItemIndex
-        // A skip blend and a mix the planner chose are blends; an equal-power
-        // fade at the end (standard, or Automix's plain crossfade) is plain.
-        val kind = if (skipBlender.pending != null || isRealMix()) {
-            TransitionFailureLog.Kind.BLEND
-        } else {
-            TransitionFailureLog.Kind.PLAIN
+        // What a failure costs the pair: an Automix plan by its kind
+        // ([TransitionKind]); a skip blend is a blend; a standard crossfade is plain.
+        val kind = when {
+            skipBlender.pending != null -> TransitionFailureLog.Kind.BLEND
+            plan != null -> TransitionKind.of(plan).failure
+            else -> TransitionFailureLog.Kind.PLAIN
         }
         markActive(
             out,
@@ -2759,7 +2760,7 @@ class CrossfadeController(
         outgoing = out
         incoming = into
         outgoingItemIndex = out.currentMediaItemIndex
-        markActive(out, nextIndex, TransitionFailureLog.Kind.LOOP_MIX, "loop mix")
+        markActive(out, nextIndex, TransitionKind.LOOP_MIX.failure, "loop mix")
         watchStandby(into)
         armDeadline = SystemClock.elapsedRealtime() + LOOP_BUILD_TIMEOUT_MS
         holdAtEnd(out)
