@@ -2865,6 +2865,7 @@ class CrossfadeController(
         incoming = into
         outgoingItemIndex = out.currentMediaItemIndex
         markActive(out, nextIndex, "loop mix")
+        watchStandby(into)
         armDeadline = SystemClock.elapsedRealtime() + LOOP_BUILD_TIMEOUT_MS
         holdAtEnd(out)
         val sampleRate = outPort.sampleRate
@@ -3164,6 +3165,33 @@ class CrossfadeController(
         }
     }
 
+    /**
+     * A loop mix's incoming player, before the handoff, has no listener of
+     * this class's: an error there stops it inside Media3 and only shows up as
+     * "a sink was flushed". Logged, so a failure names its cause.
+     */
+    private val standbyWatch = object : Player.Listener {
+        override fun onPlayerError(error: PlaybackException) {
+            TransitionLog.w(
+                "standby player error during $phase (pair=${failureGate.pair}): ${error.errorCodeName}" +
+                    (error.cause?.let { " (${it.javaClass.simpleName}: ${it.message})" } ?: ""),
+            )
+        }
+    }
+
+    private var watchedStandby: ExoPlayer? = null
+
+    private fun watchStandby(player: ExoPlayer) {
+        unwatchStandby()
+        player.addListener(standbyWatch)
+        watchedStandby = player
+    }
+
+    private fun unwatchStandby() {
+        watchedStandby?.removeListener(standbyWatch)
+        watchedStandby = null
+    }
+
     /** The loop mix isn't happening after all: the pair takes the planner's blend instead. */
     private fun loopFallBack(reason: String) {
         Log.d(TAG, "loop mix falls back to a blend: $reason")
@@ -3378,6 +3406,7 @@ class CrossfadeController(
         handedOff = false
         failureGate.end()
         skipBlender.end()
+        unwatchStandby()
         outgoingItemIndex = C.INDEX_UNSET
         queuedItemCount = 0
         incomingCueTimeMs = 0L
