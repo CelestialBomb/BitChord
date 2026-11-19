@@ -63,6 +63,17 @@ an opening loop is one starting within the first 4 bars.
 
 Installed 03:58 (all of the above). Tests: shared 187, app 1259 (1 skipped).
 
+**Phone check, 03:58 build:** 1 PASS (Dream, Ivory -> I Can't Say Goodbye "(plays through, its
+opening)", carried straight on); 2 PASS (Flamingo -> i don't belong here still loops mid-song; other
+loop mixes fine); 3 and 4 didn't come up.
+
+| Commit | What |
+|---|---|
+| `da23a3b0` | (c) Media3's 10 s stuck default restored (240 s from `9304e202` removed). Dev-only adb hook: `adb shell am broadcast -a com.dev.bitchord.DEBUG_LOOP -p com.dev.bitchord --es fire <stall-incoming\|stop-standby\|replace-item>`. Version swap is not a hook suspect (it needs the service's swap internals) |
+| `cec153d6` | Dev-only stop-site log (`standby player stopped by <site>`, `retire: stopping a player`) |
+
+Installed 04:08.
+
 ### Stage 2: style, blend length, Mix on skip (19 Nov)
 
 Plan: `C:\Users\kcbum\.claude\plans\transitions-v2-stage-2.md` (user's go 19 Nov).

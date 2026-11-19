@@ -23,7 +23,7 @@ This file is identical in both forks. Change it in both or in neither.
 
 ## 1. Principles
 
-1. **Off means unchanged.** With "Beat-aware transitions" off, each app behaves exactly as the version it was built against, except these fixes to bugs in that version, which apply whenever Automix or crossfade is on: the failure record (4.6, which stops a failed blend replaying the song's end), the queue hook (4.3), the Previous reset (4.4, 4.6), and on Android a 240 s stuck-player timeout for both players (Media3's 10 s default failed loop mixes, which hold the player's position for the length of the mix).
+1. **Off means unchanged.** With "Beat-aware transitions" off, each app behaves exactly as the version it was built against, except these fixes to bugs in that version, which apply whenever Automix or crossfade is on: the failure record (4.6, which stops a failed blend replaying the song's end), the queue hook (4.3), the Previous reset (4.4, 4.6), and on Android the loop-mix fixes of rebuild stage 3: a loop port's clock reading belongs to its own arm, and the incoming player starts where it lines up with the deck instead of waiting at 0:00 through inserted silence (which Media3's 10 s stuck check read as a stuck player).
 2. **Fall back, don't fail.** Missing or weak evidence lowers the tier. It never causes an error, a gap or a stall.
 3. **One rule set, two engines.** Android uses the existing planner. PC ports the same rules, thresholds and reason codes.
 4. **The spec covers timing, not sound.** It fixes when to blend, where, for how long and when to fall back. Filters, EQ and effects are up to each platform.
