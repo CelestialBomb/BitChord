@@ -14,7 +14,7 @@ reference (last commit `55713bb2`). Spec 0.7.
 | 0. Branch and docs (brief, CLAUDE.md, .clinerules, spec 0.7, this log) | Done |
 | 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done and pushed** 19 Nov. Phone checklist 1-7 pass (2 after the settle fix `5995624c`); item 2's no-mix retest goes to stage 3 |
 | 2. Styles, blend length, Mix on skip; fixtures 014-018 | **Done** 19 Nov, tests pass. Phone checks 1, 3-9 pass (8 by code, 9 after `553831cd`); 2 partial: the styles work, and the loop-mix failures seen during it go to stage 3. Not pushed yet |
-| 3. Automatic loop mix and the flush fix (dev-only adb hook) | Planned (`C:\Users\kcbum\.claude\plans\transitions-v2-stage-3.md`), waiting for the user's go and 3 decisions |
+| 3. Automatic loop mix and the flush fix (dev-only adb hook) | In progress (plan `C:\Users\kcbum\.claude\plans\transitions-v2-stage-3.md`, go 19 Nov). Done: (a) `cf85b64a`, (b) `105013ed`, standby error log `7a3079c9`; phone check of (a)+(b) before (c) |
 | 4. Custom transitions; fixtures 019-023 | Not started |
 | 5. Cleanup and independent review | Not started |
 | 6. New features (brief section 7) | Not started |
@@ -27,6 +27,21 @@ Decisions for the rebuild:
   `player.shuffleModeEnabled`, which stays false under the app's own shuffle.
 - Album title and ID reach the planner only with Beat-aware on. The old branch always passed
   the title, and v1.9.1's live / spoken-word rule (R4) reads it, so Off was not v1.9.1.
+
+### Stage 3: loop mix (19 Nov, in progress)
+
+User decisions with the go: after a failed loop mix the pair may still get the planner's DJ blend
+(only a failed blend drops to a plain crossfade); keep the incoming loop mid-song, but never repeat
+one on the song's opening; keep the adb test hook, dev builds only.
+
+| Commit | What |
+|---|---|
+| `cf85b64a` | (a) `LoopMixPort` clears its clock reading on arm and disarm: a stale reading made the mix clock read past the loop start ("the sink never reached the loop", 6 of 11 loop mixes on 19 Nov) and fed the first alignment (+20-33 s) |
+| `105013ed` | (b) An incoming loop on the song's opening (before its second bar line) plays through instead of repeating (`Plan.inRepeats`). The incoming player starts where it lines up with the deck, never before 0:00 (`LoopMix.incomingStart`), so no long silence is inserted |
+| `7a3079c9` | Errors on a loop mix's standby player are logged (`standby player error during ...`) |
+
+Tests: shared 184, app 1257 (1 skipped). Still with the 240 s stuck timeout; (c) restores 10 s once
+the phone shows the release is on the deck and no long silence is inserted.
 
 ### Stage 2: style, blend length, Mix on skip (19 Nov)
 
