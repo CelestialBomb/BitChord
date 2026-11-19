@@ -2016,6 +2016,11 @@ class PlaybackService : MediaLibraryService() {
                     trackAnalyzer.loopRegion(item.mediaId, uri, durationMs / 1000.0, from, to, rate)
                 }
             },
+            loopCopyReady = { item, durationMs ->
+                item.localConfiguration?.uri?.let { uri ->
+                    trackAnalyzer.hasLoopCopy(item.mediaId, uri, durationMs / 1000.0)
+                } == true
+            },
             syncedLines = ::loopMixLyrics,
             loudnessGain = ::loudnessGainFor,
             onMixPositionJump = { wrapped -> (mediaSession?.player as? SessionPlayer)?.announceMixPosition(wrapped) },

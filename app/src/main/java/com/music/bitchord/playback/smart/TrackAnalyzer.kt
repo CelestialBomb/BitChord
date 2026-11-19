@@ -1478,6 +1478,17 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
     )
 
     /**
+     * Whether a complete cached copy of [trackId] is there for [loopRegion] to
+     * decode from. A song that was seeked into, or is being upgraded to another
+     * rendition, may have only part of one, and the decks then cannot be built.
+     * Reads headers, so not for every tick.
+     */
+    fun hasLoopCopy(trackId: String, uri: Uri, durationSeconds: Double): Boolean {
+        if (uri.getQueryParameter("v") == null && uri.authority == "source") return false
+        return runCatching { copyToRead(trackId, uri, durationSeconds) }.getOrNull() != null
+    }
+
+    /**
      * Stereo audio of [fromSeconds]..[toSeconds] of [trackId] at [sampleRate],
      * for a loop mix deck, read off the copy analysis measured (so the deck's
      * loop is cut from the same audio its downbeats were found in). Null for a

@@ -238,6 +238,8 @@ class CrossfadeController(
     private val loopPortOf: (ExoPlayer) -> LoopMixPort? = { null },
     /** Stereo audio of a track for a loop mix deck: (item, duration ms, from s, to s, rate). Blocking. */
     private val loopRegion: (MediaItem, Long, Double, Double, Int) -> LoopRegion? = { _, _, _, _, _ -> null },
+    /** Whether a complete cached copy of a track is there to decode its loop regions from: (item, duration ms). */
+    private val loopCopyReady: (MediaItem, Long) -> Boolean = { _, _ -> true },
     /** A track's synced lyrics, for vouching a loop instrumental; null when it has none. */
     private val syncedLines: suspend (MediaItem, Long) -> List<LyricLine>? = { _, _ -> null },
     /** The loudness-normalisation gain a track plays at, so the incoming deck is levelled like its player. */
@@ -2756,16 +2758,45 @@ class CrossfadeController(
     }
 
     /** Why [current] -> [next] can't be a loop mix right now, or null when it can. */
-    private fun loopRefusalFor(player: ExoPlayer, current: MediaItem, next: MediaItem, state: SmartAnalysis): String? = when {
+    private fun loopRefusalFor(
+        player: ExoPlayer,
+        current: MediaItem,
+        next: MediaItem,
+        state: SmartAnalysis,
+        durationMs: Long,
+        nextDurationMs: Long,
+    ): String? = when {
         !LoopMixRenderer.available -> "no renderer"
         AppSettings.playbackSpeed.value != 1f -> "playback speed is not 1x"
         player.skipSilenceEnabled -> "skip silence is on"
         SleepTimer.afterTrack.value -> "sleep timer"
         state.current != TrackAnalysisState.ANALYSED || state.next != TrackAnalysisState.ANALYSED -> "waiting on analysis"
         isSourceBacked(current) || isSourceBacked(next) -> "analysed off another recording"
-        loopPortOf(player)?.supportsLoopMix != true -> "this output can't take it"
+        // The decks are decoded from a complete cached copy of each song. A song seeked into, or
+        // mid quality upgrade, may not have one yet: a wait, not a mix armed to fail ("the decks
+        // would not build"), which would cost the pair its loop.
+        !loopCopyFor(current, durationMs) -> "waiting on ${current.mediaMetadata.title ?: "this song"}'s audio in the cache"
+        !loopCopyFor(next, nextDurationMs) -> "waiting on ${next.mediaMetadata.title ?: "the next song"}'s audio in the cache"
+        // A sink that has not played yet (paused, a restored queue, players rebuilt after an output
+        // change such as earbuds connecting) reads as never configured: a wait, not a limit.
+        loopPortOf(player)?.let { it.sampleRate == 0 && !it.precision } == true -> "waiting on the audio output"
+        loopPortOf(player)?.supportsLoopMix != true -> "this output can't take it (" +
+            (loopPortOf(player)?.let { "precision=${it.precision} ch=${it.channelCount} rate=${it.sampleRate}" } ?: "no port") + ")"
         loopPortOf(standby()) == null -> "no standby sink"
         else -> null
+    }
+
+    private val loopCopyChecked = HashMap<String, Pair<Boolean, Long>>()
+
+    /** [loopCopyReady], remembered for [LOOP_COPY_RECHECK_MS] when it says no: it reads container headers. */
+    private fun loopCopyFor(item: MediaItem, durationMs: Long): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        loopCopyChecked[item.mediaId]?.let { (ready, at) ->
+            if (ready || now - at < LOOP_COPY_RECHECK_MS) return ready
+        }
+        val ready = loopCopyReady(item, durationMs)
+        loopCopyChecked[item.mediaId] = ready to now
+        return ready
     }
 
     /** A track whose analysis reads a matched YouTube recording rather than what plays. */
@@ -2789,7 +2820,7 @@ class CrossfadeController(
         state: SmartAnalysis,
     ): LoopMix.Plan? {
         val pair = "${current.mediaId}->${next.mediaId}"
-        loopRefusalFor(player, current, next, state)?.let { why ->
+        loopRefusalFor(player, current, next, state, durationMs, nextDurationMs)?.let { why ->
             noteLoopVerdict(pair, null, why)
             return null
         }
@@ -4737,6 +4768,9 @@ class CrossfadeController(
         const val LOOP_ARM_LEAD_MS = 12_000L
         const val LOOP_MIN_LEAD_MS = 9_000L
         const val LOOP_BUILD_TIMEOUT_MS = 8_000L
+
+        /** How long a "no complete cached copy" answer stands before it is asked again. */
+        const val LOOP_COPY_RECHECK_MS = 3_000L
 
         /** After the incoming player starts, how long its clock settles before it is measured against the deck. */
         const val LOOP_ALIGN_SETTLE_SECONDS = 1.2
