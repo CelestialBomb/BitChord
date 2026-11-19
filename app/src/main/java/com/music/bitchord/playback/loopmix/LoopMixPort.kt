@@ -52,12 +52,14 @@ class LoopMixPort {
         private set
 
     fun armOutgoing(arm: OutArm) {
+        forgetPosition()
         inArm = null
         outArm = arm
         generation++
     }
 
     fun armIncoming(arm: InArm) {
+        forgetPosition()
         outArm = null
         inArm = arm
         pendingShift.set(0)
@@ -65,10 +67,23 @@ class LoopMixPort {
     }
 
     fun disarm() {
+        forgetPosition()
         outArm = null
         inArm = null
         pendingShift.set(0)
         generation++
+    }
+
+    /**
+     * v1.9.1 bug fix: the sink only takes a reading while armed, so the last
+     * one outlived the mix it belonged to, and the next arm on this player
+     * extrapolated from it, minutes old. The mix clock then read far past the
+     * loop start and arming gave up at once ("the sink never reached the
+     * loop"). [presentedSeconds] now answers null until this arm has a reading.
+     */
+    private fun forgetPosition() {
+        positionUs = C.TIME_UNSET
+        positionNanos = 0L
     }
 
     // ---- What the sink publishes ---------------------------------------------------------
