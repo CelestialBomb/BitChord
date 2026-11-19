@@ -65,10 +65,19 @@ internal class SkipBlender {
         return decision
     }
 
-    /** A skip blend is being armed for [decision], pressed at [nowMs]. */
-    fun start(decision: SkipDecision, nowMs: Long) {
+    /**
+     * False for the fade a failed loop mix continues into the incoming song
+     * with: armed the same way, but the listener skipped nothing, so it is
+     * booked as the song ending and a fade that can't start skips nothing.
+     */
+    var isSkip: Boolean = true
+        private set
+
+    /** A skip blend (or, with [asSkip] false, a loop's continue fade) is being armed for [decision] at [nowMs]. */
+    fun start(decision: SkipDecision, nowMs: Long, asSkip: Boolean = true) {
         pending = decision
         pressedAt = nowMs
+        isSkip = asSkip
     }
 
     /** How long ago the blend in flight was asked for. */

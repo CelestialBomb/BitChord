@@ -67,4 +67,12 @@ class SkipBlenderTest {
         blender.end()
         assertNull(blender.pending)
     }
+
+    @Test
+    fun aLoopsContinueFadeIsArmedLikeASkipButIsNoSkip() {
+        blender.start(SkipDecision(SkipAction.PLAIN_FADE, "loop-fallback-continue", fadeSeconds = 1.0), nowMs = 0, asSkip = false)
+        assertEquals(false, blender.isSkip)
+        blender.start(press(at = 10_000), nowMs = 10_000)
+        assertEquals(true, blender.isSkip)
+    }
 }

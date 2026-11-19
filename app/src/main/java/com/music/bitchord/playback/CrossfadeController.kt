@@ -889,7 +889,7 @@ class CrossfadeController(
                 // A skip blend still waiting for its beat or its next song has
                 // not moved the session yet: the press it was carrying out is
                 // done now, plainly, before the caller does this one.
-                val waiting = skipBlender.pending != null && !handedOff
+                val waiting = skipBlender.pending != null && skipBlender.isSkip && !handedOff
                 bailByListener("skip")
                 if (waiting) active().seekToNextMediaItem()
             }
@@ -991,12 +991,17 @@ class CrossfadeController(
         }
     }
 
-    /** The skip the listener asked for, done the ordinary way after a skip blend could not start. */
+    /**
+     * The skip the listener asked for, done the ordinary way after a skip blend
+     * could not start. A loop's continue fade that cannot start skips nothing:
+     * the song plays on and the planner's blend follows.
+     */
     private fun abandonSkipBlend(why: String) {
-        TransitionLog.d("skip blend abandoned: $why; skipping plainly")
+        val skip = skipBlender.isSkip
+        TransitionLog.d(if (skip) "skip blend abandoned: $why; skipping plainly" else "loop-fallback-continue abandoned: $why")
         val out = outgoing
         finish()
-        out?.seekToNextMediaItem()
+        if (skip) out?.seekToNextMediaItem()
     }
 
     /**
@@ -1746,6 +1751,7 @@ class CrossfadeController(
             nextIndex,
             kind,
             when {
+                skipBlender.pending != null && !skipBlender.isSkip -> "loop fallback fade"
                 skipBlender.pending != null -> "skip blend"
                 smart -> "automix blend"
                 else -> "standard crossfade"
@@ -2027,7 +2033,7 @@ class CrossfadeController(
         // firing on a player this class is about to demote.
         listenTo(into)
         handedOff = true
-        onHandoff(out, into, skipBlender.pending != null)
+        onHandoff(out, into, skipBlender.pending != null && skipBlender.isSkip)
 
         // The outgoing player holds the whole queue too, and a standard
         // crossfade runs right up to its track's natural end — at which point
@@ -3154,6 +3160,17 @@ class CrossfadeController(
                 ?: session.plan.out.loopStart).let { (it * 1000).roundToLong() }
             else -> null
         }
+        // A failure after the incoming song had entered the mix: it carries on
+        // from where the mix had it, rather than being cut and started again
+        // from 0:00 by the blend that would otherwise follow.
+        val continueAtMs: Long? = if (
+            failed && !wasHandedOff && tookOver && session != null && m != null &&
+            m >= session.clock.enterEnd && out != null && out.playerError == null
+        ) {
+            LoopMix.positionAt(session.clock, LoopMix.Side.IN, m)?.let { (it * 1000).roundToLong() }
+        } else {
+            null
+        }
         finish()
         session?.renderer?.let(::closeLater)
         // The session player, after [finish]: idle by then, so the seek's own
@@ -3174,6 +3191,36 @@ class CrossfadeController(
             } else {
                 TransitionLog.w("loop settle: no seek to ${target}ms, the player moved on from that song")
             }
+        }
+        if (continueAtMs != null && out != null && out.currentMediaItem?.mediaId == targetSongId) {
+            continueIntoIncoming(out, continueAtMs, failedPair)
+        }
+    }
+
+    /**
+     * After a failed loop mix the incoming song had already entered: a short
+     * plain fade into it at [cueMs], where the mix had it ([LOOP_CONTINUE_FADE_SECONDS]).
+     * Armed like a Mix on skip fade, but booked as the song ending, not a skip.
+     */
+    private fun continueIntoIncoming(out: ExoPlayer, cueMs: Long, pair: String?) {
+        TransitionLog.d("loop-fallback-continue $pair: the incoming song carries on from ${cueMs}ms")
+        val decision = SkipDecision(
+            action = SkipAction.PLAIN_FADE,
+            reason = "loop-fallback-continue",
+            fadeSeconds = LOOP_CONTINUE_FADE_SECONDS,
+            incomingCueSeconds = cueMs / 1000.0,
+        )
+        skipBlender.start(decision, SystemClock.elapsedRealtime(), asSkip = false)
+        val started = begin(
+            fade = decision.fadeMs,
+            endMs = out.currentPosition + decision.fadeMs,
+            smart = true,
+            cueTimeMs = decision.incomingCueMs,
+            renderStyle = skipRender(decision, 0.0),
+        )
+        if (!started) {
+            skipBlender.end()
+            TransitionLog.d("loop-fallback-continue could not arm; the planner's blend follows")
         }
     }
 
@@ -3369,7 +3416,7 @@ class CrossfadeController(
         // "Mixing" label and echo tail outlast it: a tap on the label then found
         // no view and closed with "No Automix transition coming up". Its view
         // stays up a little longer; every other blend clears as before.
-        val skipView = AppSettings.smartMixView.value.takeIf { skipBlender.pending != null && handedOff }
+        val skipView = AppSettings.smartMixView.value.takeIf { skipBlender.pending != null && skipBlender.isSkip && handedOff }
         clearMixView()
         if (skipView != null) lingerSkipView(skipView)
         // Before anything else: a transition that never handed off leaves the
@@ -4269,6 +4316,9 @@ class CrossfadeController(
 
         /** How long a finished skip blend's mix view stays up for a late tap on "Mixing". */
         const val SKIP_VIEW_LINGER_MS = 5_000L
+
+        /** The fade into the incoming song after a loop mix failed past its entry. */
+        const val LOOP_CONTINUE_FADE_SECONDS = 1.0
 
         /**
          * Head start the standby gets to open the incoming track and buffer to
