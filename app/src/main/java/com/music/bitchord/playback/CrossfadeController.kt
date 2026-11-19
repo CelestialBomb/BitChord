@@ -3277,6 +3277,37 @@ class CrossfadeController(
 
     private var watchedStandby: ExoPlayer? = null
 
+    /**
+     * Dev builds only (the service registers the broadcast that calls this):
+     * forces one suspect into the loop mix in flight, so its failure and the
+     * fallback after it can be heard on demand. The log names what was fired
+     * and what the mix did next.
+     *  - `stall-incoming`: holds the incoming player's position for 12 s
+     *    (12 s of inserted silence), past Media3's 10 s stuck check;
+     *  - `stop-standby`: stops whichever player is not the session's;
+     *  - `replace-item`: replaces the session's playing item with a copy, in
+     *    place, as the quality upgrade does.
+     */
+    fun debugLoopFire(suspect: String) {
+        val session = loopSession
+        if (session == null || (phase != Phase.LOOP_ARMING && phase != Phase.LOOP_RUNNING)) {
+            TransitionLog.w("debug $suspect: no loop mix in flight (phase=$phase)")
+            return
+        }
+        val m = session.mixSeconds(System.nanoTime(), outgoing?.isPlaying ?: false)
+        TransitionLog.w("debug $suspect fired at mix ${m?.let { "%.2f".format(Locale.ROOT, it) }}s (phase=$phase, handedOff=$handedOff)")
+        when (suspect) {
+            "stall-incoming" -> session.inPort.requestShift(-12L * session.inPort.sampleRate.coerceAtLeast(1))
+            "stop-standby" -> (if (handedOff) outgoing else incoming)?.stop()
+            "replace-item" -> active().let { player ->
+                player.currentMediaItem?.let { item ->
+                    player.replaceMediaItem(player.currentMediaItemIndex, item.buildUpon().setTag(System.nanoTime()).build())
+                }
+            }
+            else -> TransitionLog.w("debug: unknown suspect '$suspect' (stall-incoming, stop-standby, replace-item)")
+        }
+    }
+
     private fun watchStandby(player: ExoPlayer) {
         unwatchStandby()
         player.addListener(standbyWatch)
