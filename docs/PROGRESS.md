@@ -74,6 +74,19 @@ loop mixes fine); 3 and 4 didn't come up.
 
 Installed 04:08.
 
+**Hook tests on the 04:08 build (19 Nov, 11:30-11:50; the capture ran throughout):**
+
+| Run | What | Result |
+|---|---|---|
+| A | Flamingo -> i don't belong here, no hook, 10 s stuck default back | PASS: clean, released `-0.01ms`, no stuck error. Seen too: "waiting on <song>'s audio in the cache", "waiting on the audio output", the dev `retire:` line |
+| B | `stall-incoming` at mix 22.3 s (Dream, Ivory -> I Can't Say Goodbye) | Hook doesn't do what it says: the position froze (handover `in=21055ms`, not about 22.3 s), but Media3 never called it stuck. The silence goes in in chunks, so the reported position wobbles. No failure. To fix or drop |
+| C | `stop-standby` 5 s after takeover (early, Flamingo -> i don't belong here) | PASS (log + user): `failure of a loop_mix ... NO_LOOP`; Flamingo settled at the mix's spot in its 1-bar loop (173.7 s) and played on; normal 6 s crossfade into i don't belong here at its 4.9 s entry. The quality upgrade did not run during the mix (served 1.3 s before it) |
+| D | `stop-standby` 18 s after takeover (Hugs -> Lifer) | Fired after the handover (at 14.2 s), so it stopped Hugs, which carried the mix renderer. No continue fade, by design; Lifer played on from about 17 s (the upgrade 5 s later logged 21908 ms). The user heard the cut and a speed change (the deck plays Lifer about 0.93x in the ramp), not a restart |
+| D2 | The continue fade (fire between entry and handover) | Pending: watcher armed for Dream, Ivory -> I Can't Say Goodbye, 19.5 s after takeover |
+
+New issue 20 (brief): the quality upgrade's swap leaves a noticeable gap (`swap seam: 292ms of
+silence`, Lifer 11:48:27). v1.9.1 behaviour.
+
 ### Stage 2: style, blend length, Mix on skip (19 Nov)
 
 Plan: `C:\Users\kcbum\.claude\plans\transitions-v2-stage-2.md` (user's go 19 Nov).

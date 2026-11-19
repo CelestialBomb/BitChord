@@ -61,6 +61,9 @@ Purpose: rebuild the transitions work cleanly on a new branch from the v1.9.1 ba
 19. **Album Play shuffled:** Play on an album or playlist page should play in order (turning the app's shuffle off). Only the Shuffle button shuffles.
     - v1.9.1 behaviour: Play takes the app's saved shuffle state, so album gapless never applies once shuffle has been on.
     - When: stage 5, as a minimal, commented original-app fix.
+20. **Quality-upgrade dropout:** when the stream quality upgrade swaps a playing song to the better copy, there is a noticeable gap (19 Nov 11:48:27, Lifer: `swap seam: 292ms of silence`).
+    - v1.9.1 behaviour: the swap and its seam log are v1.9.1's own (`PlaybackService`, swap leg), unchanged by the rebuild.
+    - When: to decide; a minimal, commented original-app fix.
 
 ## 3. Features built on `transitions` (port these)
 
