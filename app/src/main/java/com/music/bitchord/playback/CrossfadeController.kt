@@ -2575,7 +2575,20 @@ class CrossfadeController(
         republishWaves()
     }
 
+    /** Keeps a finished skip blend's [view] published for [SKIP_VIEW_LINGER_MS]; see [finish]. */
+    private fun lingerSkipView(view: MixTransitionView) {
+        AppSettings.smartMixView.value = view
+        skipViewJob = scope.launch {
+            delay(SKIP_VIEW_LINGER_MS)
+            if (AppSettings.smartMixView.value === view) AppSettings.smartMixView.value = null
+        }
+    }
+
+    private var skipViewJob: Job? = null
+
     private fun clearMixView() {
+        skipViewJob?.cancel()
+        skipViewJob = null
         mixViewJob?.cancel()
         mixViewJob = null
         mixWavePair = null
@@ -3311,7 +3324,13 @@ class CrossfadeController(
         }
         AppSettings.smartMixInProgress.value = false
         AppSettings.smartMixBlend.value = null
+        // A Mix on skip blend that played out is over in 2-4 s, and its
+        // "Mixing" label and echo tail outlast it: a tap on the label then found
+        // no view and closed with "No Automix transition coming up". Its view
+        // stays up a little longer; every other blend clears as before.
+        val skipView = AppSettings.smartMixView.value.takeIf { skipBlender.pending != null && handedOff }
         clearMixView()
+        if (skipView != null) lingerSkipView(skipView)
         // Before anything else: a transition that never handed off leaves the
         // outgoing player as the session, and it must not pause at the end of
         // its track for a blend that is not coming.
@@ -4205,6 +4224,9 @@ class CrossfadeController(
 
         /** A skip blend may start this much ahead of its beat: the arming tick is 40 ms. */
         const val SKIP_BEAT_EARLY_MS = 20.0
+
+        /** How long a finished skip blend's mix view stays up for a late tap on "Mixing". */
+        const val SKIP_VIEW_LINGER_MS = 5_000L
 
         /**
          * Head start the standby gets to open the incoming track and buffer to
