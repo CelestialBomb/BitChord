@@ -86,7 +86,31 @@ Installed 04:08.
 
 `stall-incoming` removed from the hook: it cannot freeze the reported position (see B), so it
 never reaches the stuck check. The stuck path itself is covered by the stage 3 fixes and run A.
-`replace-item` is still untested.
+`replace-item` was skipped (user): the real upgrade waits for a mix (run C).
+
+**(e) and the rest (19 Nov, midday):**
+
+| Commit | What |
+|---|---|
+| `30f6ab85` | Hook: `stall-incoming` dropped; the fallback fade logs as "loop fallback fade starts" |
+| `c507be81` | The loop mix's planning moves into `LoopMixPlanner` (refusals, cache and lyrics lookups, plan cache, verdict log); verbatim, about 170 lines out of the controller |
+| `c03c5183` | Shared `TransitionKind` (loop mix, beat blend, filter sweep, echo-out, gapless, crossfade) with what a failure of each costs; the controller charges failures by it; the plan log gains `kind=` |
+
+Scoped down from the plan, on purpose:
+- The playing half of the loop mix stays in the controller. Moving it needs a host interface
+  onto about 20 of the controller's private members, which is a rewrite of v1.9.1's core with
+  only phone checks to catch a slip. Left for stage 5's cleanup and its independent review.
+- Tempo: no code. A global speed or pitch changes no pair decision (tempo ratio, fold, key
+  distance); only the planner's wall-clock limits move. Written up as the design for issue 18 in
+  spec 4.9, instead of an unused helper.
+
+Installed 12:12 for a "loops still sound the same" listen. Spec 4.6, 4.9, reason codes and the
+changelog updated.
+
+**Stage 3 phone checklist** (the capture runs throughout):
+1. Loop mixes still sound as before the refactor (Flamingo -> i don't belong here: mid-song loop
+   repeats; Dream, Ivory -> I Can't Say Goodbye: "(plays through, its opening)").
+2. The `plan` log lines carry `kind=`.
 
 New issue 20 (brief): the quality upgrade's swap leaves a noticeable gap (`swap seam: 292ms of
 silence`, Lifer 11:48:27). v1.9.1 behaviour.
