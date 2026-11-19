@@ -12,7 +12,7 @@ reference (last commit `55713bb2`). Spec 0.7.
 | Stage (brief section 6) | Status |
 |---|---|
 | 0. Branch and docs (brief, CLAUDE.md, .clinerules, spec 0.7, this log) | Done |
-| 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done in code**, tests pass. Phone checklist: item 2 done (settle bug found and fixed in `5995624c`, installed 18 Nov 17:39, re-check pending); items 1 and 3-7 to do. Next session: resume the checklist, then plan stage 2 |
+| 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done**, tests pass. Phone checklist run 18-19 Nov (results below): 1, 3, 4, 6, 7 pass; 2 pass after the settle fix `5995624c`; 5 not confirmable from the log. Not pushed yet |
 | 2. Styles, blend length, Mix on skip; fixtures 014-018 | Not started |
 | 3. Automatic loop mix and the flush fix (dev-only adb hook) | Not started |
 | 4. Custom transitions; fixtures 019-023 | Not started |
@@ -81,6 +81,44 @@ and playback jumped back to the loop's start. The failure record then worked (pl
 - Also seen: "the sink never reached the loop" (`zme6S-rVJWg -> bY5AqVorG_8`, 37 ms after
   arming) and "the decks would not build" (`fCw7V--epV0 -> zme6S-rVJWg`, the cached-copy problem
   the old branch's 68e6e71f addresses). Both are stage 3.
+
+#### Stage 1 phone results (18 Nov 17:26 build, then the 17:39 settle-fix build)
+
+The phone's log buffer only reached back to 01:10:16 on 19 Nov: the app's other logging (addon
+lookups) rotates it within minutes. So items 2-6 rest on the user's observations, and from now
+on a capture runs for the whole check
+(`adb logcat -v time BitChordTransitions:V BitChordCrossfade:V AndroidRuntime:E '*:S' > file`).
+
+| # | Result | Evidence |
+|---|---|---|
+| 1 | PASS | Seen by the user: Settings > Automix shows Beat-aware and its three switches |
+| 2 | PASS after `5995624c` | 18 Nov, Beat-aware off: 4 of 5 mixes normal; the failed loop and its jump back are analysed above. 19 Nov ~00:05 retest: the pair said "this pair failed before" and got no mix (NONE). Not in the log. **Note:** the failure record lives in memory per app process, and the 17:39 install restarted the app. So that NONE means two new failures of the pair in the new process, not the 18 Nov ones; their cause is unknown. Re-check with the capture running |
+| 3 | PASS | User: DRAMATICA gapless with shuffle off, normal mixes with shuffle on. Not in the log |
+| 4 | PASS | User, 01:03-01:05: "analysing the next song · provisional mix in 207 s" with a dimmed window, then a 4-bar loop mix (199 -> 185 BPM) that ran cleanly. Not in the log |
+| 5 | Not confirmed | Done by the user; the `queue changed` / `plans dropped: queue changed` lines had rotated out. Redo with the capture |
+| 6 | PASS | User ~01:09: "this pair failed before", plain crossfade, no repeated ending. The log's tail shows it: `1EkVojVV_3I->4iqrRR84Znk` `smart-plain-crossfade`, handoff 01:10:49, finish 01:10:52 |
+| 7 | PASS, with a stage 3 item | Log: Previous at 01:10:58-01:11:00 and again at 01:12:28-32 (`plans dropped: previous`), then the same pair planned its loop mix again (record cleared). Both times the loop failed while arming, then a plain crossfade played cleanly (01:11:52-01:12:02, 01:13:17) |
+
+**Item 7's arming failure (stage 3).** `loop mix stops (LOOP_ARMING ...): the sink never reached
+the loop`, 3 ms after `loop armed` (01:12:52.592 -> .595; the same at 01:11:27.874 -> .888).
+`driveLoopArming` gives up when the mix clock (`session.mixSeconds`) reads more than 1 s past the
+start before the sink has spliced. Here it read that on the first tick, with the playhead at
+153 s and the takeover at 164.03 s. Both times the song had just been re-entered with Previous
+(`TIMING track selected ... reason=2`). Lead: the clock's time base (`stream offset
+1000000000000us`, taken from the outgoing port) does not match the sink after Previous re-enters
+the song. Also seen on 18 Nov at 17:31:50 on another pair, 37 ms after arming.
+
+#### Findings logged, not fixed (19 Nov)
+
+- **Issue 19: album Play stays shuffled once shuffle has been on.** v1.9.1's own behaviour:
+  `MediaController.playBoundedContext(..., shuffle = QueueShuffle.enabled.value)`
+  (`PlayerConnection.kt`) starts every album or playlist in the app's saved shuffle state, so
+  album gapless (R3, shuffle off only) never applies until shuffle is switched off. v2 does not
+  touch that path. To discuss: leave as is, or a minimal v1.9.1 fix.
+- **Failure rule, to discuss.** A pair dropped to no mix at all after a second failure that a
+  bug caused. User's idea: a failed loop mix only drops the loop (a normal crossfade next time);
+  only a failed plain crossfade drops to no mix.
+- **Expected:** skipping mid-song does not blend yet; Mix on skip returns in stage 2.
 
 Phone checklist (dev app, `logcat -s BitChordTransitions BitChordCrossfade`):
 1. Settings > Automix shows Beat-aware and, under it, its three switches.
