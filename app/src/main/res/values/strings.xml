@@ -298,6 +298,8 @@
     <string name="automix_length_short">Short</string>
     <string name="automix_length_medium">Medium</string>
     <string name="automix_length_long">Long</string>
+    <string name="mix_on_skip">Mix on skip</string>
+    <string name="mix_on_skip_subtitle">Blend into the next song when you skip mid-song instead of cutting. Previous stays instant</string>
     <string name="skip_silence">Skip silence</string>
     <string name="skip_silence_subtitle">Trim gaps longer than a second</string>
     <string name="skip_silence_float_subtitle">Unavailable on 32-bit float output</string>

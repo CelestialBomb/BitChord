@@ -35,6 +35,11 @@ import com.music.bitchord.playback.smart.echoTailSeconds
 import com.music.bitchord.playback.smart.planTransition
 import com.music.bitchord.playback.transitions.FailureGate
 import com.music.bitchord.playback.transitions.MarkerState
+import com.music.bitchord.playback.transitions.SKIP_GIVE_UP_MS
+import com.music.bitchord.playback.transitions.SKIP_READY_WAIT_MS
+import com.music.bitchord.playback.transitions.SkipAction
+import com.music.bitchord.playback.transitions.SkipBlender
+import com.music.bitchord.playback.transitions.SkipDecision
 import com.music.bitchord.playback.transitions.TransitionFailureLog
 import com.music.bitchord.playback.transitions.TransitionLog
 import com.music.bitchord.playback.transitions.TransitionPlanning
@@ -138,8 +143,11 @@ class CrossfadeController(
      * Called once per transition, halfway through the blend. After it returns, [active] must answer `incoming` and [standby]
      * must answer `outgoing` — this class re-reads neither during a transition,
      * but everything else in the service does.
+     *
+     * `skipped` is true for a Mix on skip blend: the listener skipped the
+     * outgoing song, so it is booked as a skip, not as a song that ended.
      */
-    private val onHandoff: (outgoing: ExoPlayer, incoming: ExoPlayer) -> Unit,
+    private val onHandoff: (outgoing: ExoPlayer, incoming: ExoPlayer, skipped: Boolean) -> Unit,
     /**
      * Stored Automix analysis for a media item, or an empty [TrackAnalysis]
      * when there is none yet. This is the seam Phase 1's DSP analyzer plugs
@@ -423,6 +431,12 @@ class CrossfadeController(
         lockPhase: Boolean = false,
         /** The plan's echo time; 0 for no echo out. */
         echoSeconds: Double = 0.0,
+        /**
+         * Hands the session over at this point of the blend instead of the
+         * style's own; negative for the style's. Mix on skip passes 0: the
+         * listener asked for the next song, so the screen shows it at once.
+         */
+        handoffOverride: Float = -1f,
     ) {
         private val grid = if (advanced && beats >= 2.0) beats else 0.0
         val clash = vocalOverlap.coerceIn(0.0, 1.0)
@@ -494,6 +508,7 @@ class CrossfadeController(
          * actually takes over — the bass swap in a blend.
          */
         val handoffAt = when {
+            handoffOverride >= 0f -> handoffOverride
             !advanced -> HANDOFF_AT
             style == TransitionStyle.DJ_BLEND && bassSwap -> swapAtF
             style == TransitionStyle.DJ_FILTER && filterVariant == FilterTransitionVariant.BASS_HANDOFF -> filterSwapAtF
@@ -836,6 +851,138 @@ class CrossfadeController(
      */
     fun onSkipRequested() {
         if (phase != Phase.IDLE) bailByListener("skip")
+    }
+
+    // ---- Mix on skip (design doc 4.7) ------------------------------------------
+
+    private val skipBlender = SkipBlender()
+
+    /**
+     * The listener pressed next (button, swipe, headset, notification, Auto).
+     *
+     * Returns true when this class has taken the skip over as a Mix on skip
+     * blend: the caller must then not skip. Returns false for an ordinary
+     * skip, which the caller carries out at once; any blend in flight has been
+     * cut by then, so rapid skips cut straight through and never stack.
+     *
+     * [externalGuard] is a reason the caller knows of to skip plainly (casting).
+     */
+    fun onNextRequested(externalGuard: String? = null): Boolean {
+        val player = active()
+        val current = player.currentMediaItem
+        val nextIndex = player.nextMediaItemIndex
+        val next = if (nextIndex == C.INDEX_UNSET) null else player.getMediaItemAt(nextIndex)
+        val decision = skipBlender.decide(
+            nowMs = SystemClock.elapsedRealtime(),
+            guard = externalGuard ?: skipGuard(player, current, next),
+            transitioning = phase != Phase.IDLE,
+            positionMs = player.currentPosition,
+            durationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L,
+            outgoing = current?.let(analysisFor) ?: TrackAnalysis(),
+            incoming = next?.let(analysisFor) ?: TrackAnalysis(),
+            incomingDurationMs = next?.let { nextItemDurationMs(nextIndex, it) } ?: 0L,
+            pair = if (current != null && next != null) "${current.mediaId}->${next.mediaId}" else "none",
+            phase = phase,
+        )
+        if (decision.action == SkipAction.CUT) {
+            if (phase != Phase.IDLE) {
+                // A skip blend still waiting for its beat or its next song has
+                // not moved the session yet: the press it was carrying out is
+                // done now, plainly, before the caller does this one.
+                val waiting = skipBlender.pending != null && !handedOff
+                bailByListener("skip")
+                if (waiting) active().seekToNextMediaItem()
+            }
+            return false
+        }
+        return beginSkipBlend(player, decision)
+    }
+
+    /** Why a forward skip can't be blended right now, or null when it can. */
+    private fun skipGuard(player: ExoPlayer, current: MediaItem?, next: MediaItem?): String? = when {
+        current == null || next == null -> "no next song"
+        !player.playWhenReady || !player.isPlaying -> "paused"
+        ListenTogether.state.value.inParty -> "listen together"
+        BitPerfectOutput.status.value.active -> "bit-perfect output"
+        versionSwapActive() -> "version swap"
+        current.isVideoOrigin || next.isVideoOrigin -> "video"
+        player.repeatMode == Player.REPEAT_MODE_ONE -> "repeat one"
+        SleepTimer.afterTrack.value -> "sleep timer"
+        failureGate.verdict(current.mediaId, next.mediaId) != TransitionFailureLog.Verdict.NORMAL -> "this pair failed before"
+        else -> null
+    }
+
+    /**
+     * Arms the standby at the next song's entry point while the current song
+     * plays on. [driveSkipArming] starts the blend on the beat once the
+     * incoming player is ready, and the session moves over at its very start.
+     */
+    private fun beginSkipBlend(out: ExoPlayer, decision: SkipDecision): Boolean {
+        skipBlender.start(decision, SystemClock.elapsedRealtime())
+        val beats = if (decision.beatSeconds > 0) decision.fadeSeconds / decision.beatSeconds else 0.0
+        val started = begin(
+            fade = decision.fadeMs,
+            endMs = out.currentPosition + decision.startDelayMs + decision.fadeMs,
+            smart = true,
+            cueTimeMs = decision.incomingCueMs,
+            renderStyle = skipRender(decision, beats),
+        )
+        if (!started) {
+            skipBlender.end()
+            TransitionLog.d("skip blend could not arm; skipping plainly")
+        }
+        return started
+    }
+
+    private fun skipRender(decision: SkipDecision, beats: Double) = Render(
+        style = decision.transitionStyle,
+        filterSweep = decision.filterSweep,
+        filterVariant = decision.filterVariant,
+        advanced = decision.beatSeconds > 0,
+        beats = beats,
+        echoSeconds = decision.echoSeconds,
+        handoffOverride = 0f,
+    )
+
+    /**
+     * Arming a Mix on skip blend: waits for the incoming player, at most
+     * [SKIP_READY_WAIT_MS] before dropping to a quick plain fade and at most
+     * [SKIP_GIVE_UP_MS] before skipping plainly, and for the outgoing track's
+     * next beat, which [decideSkip] already capped at half a second. A skip
+     * blend that cannot start is no failure: the skip just happens plainly.
+     */
+    private fun driveSkipArming(out: ExoPlayer, into: ExoPlayer, decision: SkipDecision) {
+        val waited = skipBlender.waitedMs(SystemClock.elapsedRealtime())
+        // Paused while waiting: the skip still happens, just plainly.
+        if (!out.playWhenReady) return abandonSkipBlend("paused while arming")
+        if (into.playbackState != Player.STATE_READY) {
+            if (waited > SKIP_GIVE_UP_MS) return abandonSkipBlend("next song not ready after ${waited}ms")
+            if (waited > SKIP_READY_WAIT_MS && decision.action == SkipAction.BLEND) {
+                val fallback = skipBlender.fallBack()
+                fadeMs = fallback.fadeMs
+                render = skipRender(fallback, 0.0)
+                TransitionLog.d(
+                    "skip ${fallback.reason}: next song not ready after ${waited}ms, ${fallback.fadeMs}ms plain fade once it is",
+                )
+            }
+            return
+        }
+        // On the beat when the next song was ready in time; at once otherwise.
+        val beatAt = fadeEndMs - fadeMs
+        if (decision.action == SkipAction.BLEND && positionMs(out) < beatAt - SKIP_BEAT_EARLY_MS) return
+        TransitionLog.d("skip blend starts at ${out.currentPosition}ms, ${waited}ms after the press (${decision.reason})")
+        // Where the blend really starts, now that it has: [mixGeometry] and the
+        // mix view read the span from here.
+        fadeEndMs = out.currentPosition + fadeMs
+        startFade()
+    }
+
+    /** The skip the listener asked for, done the ordinary way after a skip blend could not start. */
+    private fun abandonSkipBlend(why: String) {
+        TransitionLog.d("skip blend abandoned: $why; skipping plainly")
+        val out = outgoing
+        finish()
+        out?.seekToNextMediaItem()
     }
 
     /**
@@ -1570,7 +1717,15 @@ class CrossfadeController(
         outgoing = out
         incoming = into
         outgoingItemIndex = out.currentMediaItemIndex
-        markActive(out, nextIndex, if (smart) "automix blend" else "standard crossfade")
+        markActive(
+            out,
+            nextIndex,
+            when {
+                skipBlender.pending != null -> "skip blend"
+                smart -> "automix blend"
+                else -> "standard crossfade"
+            },
+        )
 
         val t0 = SystemClock.elapsedRealtimeNanos()
         val items = (0 until out.mediaItemCount).map { out.getMediaItemAt(it) }
@@ -1742,6 +1897,7 @@ class CrossfadeController(
     private fun driveArming() {
         val out = outgoing ?: return bail()
         val into = incoming ?: return bail()
+        skipBlender.pending?.let { return driveSkipArming(out, into, it) }
         if (!stillWorthFading()) return bail()
         // Paused while armed: the transition is no longer imminent, and holding
         // a prepared decoder open against a stopped player is worse than arming
@@ -1846,7 +2002,7 @@ class CrossfadeController(
         // firing on a player this class is about to demote.
         listenTo(into)
         handedOff = true
-        onHandoff(out, into)
+        onHandoff(out, into, skipBlender.pending != null)
 
         // The outgoing player holds the whole queue too, and a standard
         // crossfade runs right up to its track's natural end — at which point
@@ -3185,6 +3341,7 @@ class CrossfadeController(
         incoming = null
         handedOff = false
         failureGate.end()
+        skipBlender.end()
         outgoingItemIndex = C.INDEX_UNSET
         queuedItemCount = 0
         incomingCueTimeMs = 0L
@@ -4027,8 +4184,11 @@ class CrossfadeController(
          */
         const val DEFAULT_SMART_FALLBACK_SECONDS = 6.0
 
-        /** Ramp used when a fade is interrupted. */
+        /** Ramp used when a fade is interrupted. Also the cut a skip during any blend gets (design doc 4.4). */
         const val BAIL_MS = 120L
+
+        /** A skip blend may start this much ahead of its beat: the arming tick is 40 ms. */
+        const val SKIP_BEAT_EARLY_MS = 20.0
 
         /**
          * Head start the standby gets to open the incoming track and buffer to
