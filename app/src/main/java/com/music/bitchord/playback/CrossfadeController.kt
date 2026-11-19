@@ -13,6 +13,7 @@ import com.music.bitchord.data.listentogether.ListenTogether
 import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.data.settings.MixBlend
 import com.music.bitchord.data.settings.MixDeck
+import com.music.bitchord.BuildConfig
 import com.music.bitchord.data.settings.MixTransitionView
 import com.music.bitchord.playback.audio.bitperfect.BitPerfectOutput
 import com.music.bitchord.data.settings.SmartAnalysis
@@ -3562,6 +3563,8 @@ class CrossfadeController(
      * of preparing it.
      */
     private fun retire(player: ExoPlayer) {
+        // Dev builds only: the controller's own stop, beside the service's ones.
+        if (BuildConfig.FLAVOR == "dev") TransitionLog.d("retire: stopping a player (phase=$phase, pair=${failureGate.pair})")
         player.stop()
         player.clearMediaItems()
         // This is the next transition's incoming player, and from its handoff

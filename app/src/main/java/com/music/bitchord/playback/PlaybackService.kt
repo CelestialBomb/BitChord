@@ -2217,6 +2217,21 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /**
+     * Dev builds only: names each place the service stops the standby player,
+     * and whether a transition was using it, so a flush in a loop mix can be
+     * traced to its caller.
+     */
+    private fun noteStandbyStop(site: String) {
+        if (BuildConfig.FLAVOR != "dev") return
+        TrackLog.w(
+            "BitChord",
+            "standby player stopped by $site (transitioning=${crossfade?.isTransitioning() == true}, " +
+                "swapActive=${versionSwapJob?.isActive == true})",
+            about = "",
+        )
+    }
+
     private var versionSwapJob: Job? = null
     private var versionSwapGeneration = 0
 
@@ -2338,6 +2353,7 @@ class PlaybackService : MediaLibraryService() {
                 val alignedStartPos = alignedPosition(activePlayer.currentPosition)
 
             // Reset and configure standby player
+            noteStandbyStop("swap-reset")
             standbyPlayer.stop()
             standbyPlayer.clearMediaItems()
             standbyPlayer.skipSilenceEnabled = activePlayer.skipSilenceEnabled
@@ -2361,6 +2377,7 @@ class PlaybackService : MediaLibraryService() {
                     activePlayer.currentMediaItemIndex != currentIndex
                 ) {
                     // Active player moved to another track or was changed
+                    noteStandbyStop("swap-active-moved")
                     standbyPlayer.stop()
                     standbyPlayer.clearMediaItems()
                     standbyPlayer.volume = 1f
@@ -2380,6 +2397,7 @@ class PlaybackService : MediaLibraryService() {
 
             if (!isReady) {
                 TrackLog.w("BitChord", "version swap standby player failed to prepare, applying directly", about = mediaId)
+                noteStandbyStop("swap-prepare-failed")
                 standbyPlayer.stop()
                 standbyPlayer.clearMediaItems()
                 standbyPlayer.volume = 1f
@@ -2450,6 +2468,7 @@ class PlaybackService : MediaLibraryService() {
                     val progress = (elapsed.toFloat() / swapCrossfadeMs).coerceIn(0f, 1f)
 
                     if (player !== activePlayer || activePlayer.currentMediaItemIndex != currentIndex) {
+                        noteStandbyStop("swap-fade-moved")
                         standbyPlayer.stop()
                         standbyPlayer.clearMediaItems()
                         standbyPlayer.volume = 1f
@@ -2662,6 +2681,7 @@ class PlaybackService : MediaLibraryService() {
         mediaSession?.player = newSessionPlayer(incoming, requireNotNull(crossfade))
 
         incoming.volume = 1f
+        noteStandbyStop("adoptPlayerForVersionSwap")
         outgoing.stop()
         outgoing.clearMediaItems()
         outgoing.volume = 1f
