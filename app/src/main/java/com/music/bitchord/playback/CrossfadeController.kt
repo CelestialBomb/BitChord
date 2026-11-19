@@ -35,6 +35,7 @@ import com.music.bitchord.playback.smart.TransitionStyle
 import com.music.bitchord.playback.smart.echoTailSeconds
 import com.music.bitchord.playback.smart.planTransition
 import com.music.bitchord.playback.transitions.FailureGate
+import com.music.bitchord.playback.transitions.LoopMixPlanner
 import com.music.bitchord.playback.transitions.MarkerState
 import com.music.bitchord.playback.transitions.SKIP_GIVE_UP_MS
 import com.music.bitchord.playback.transitions.SKIP_READY_WAIT_MS
@@ -1056,13 +1057,10 @@ class CrossfadeController(
 
     private fun dropPlannedState(why: String) {
         TransitionLog.d("plans dropped: $why")
-        loopPlanned = null
-        loopPlanKey = null
-        loopRefusal = null
+        loopPlanner.forget()
         plannedTransition = null
         lastSmartPlan = null
         lastPlanVerdict = ""
-        lastLoopVerdict = ""
         lastMarkerVerdict = ""
     }
 
@@ -1438,12 +1436,10 @@ class CrossfadeController(
         // The loop mix first: a pair it can do never reaches the blend below.
         // Never for a pair that failed before (failure record).
         val loop = if (noLoop) {
-            loopPlanned = null
-            loopPlanKey = null
-            noteLoopVerdict("${currentItem.mediaId}->${nextItem.mediaId}", null, "this pair failed before")
+            loopPlanner.refuse("${currentItem.mediaId}->${nextItem.mediaId}", "this pair failed before")
             null
         } else {
-            loopPlanFor(
+            loopPlanner.planFor(
                 player, currentItem, nextItem, currentAnalysis, nextAnalysis, duration, nextDuration, analysisState,
             )
         }
@@ -2727,172 +2723,15 @@ class CrossfadeController(
     private var loopBuildJob: Job? = null
     private var loopAlignJob: Job? = null
 
-    /** The pair (and analyses) the cached loop plan belongs to, and that plan; null when none is possible. */
-    private var loopPlanKey: String? = null
-    private var loopPlanned: LoopMix.Plan? = null
+    /** Whether a pair gets a loop mix, and which ([LoopMixPlanner]); the rest of this section plays it. */
+    private val loopPlanner = LoopMixPlanner(scope, syncedLines, loopCopyReady, loopPortOf, standby)
 
-    /** Why the pair gets no loop mix, for the log and the stats line; null when it does. */
-    private var loopRefusal: String? = null
-    private var lastLoopVerdict = ""
     private var loopIncomingStarted = false
     private var lastLoopPositionMs = -1L
     private var lastLoopAnnounceAt = 0L
     private var lastLoopBeat = -1
 
-    /** Synced-lyric spans per media id, once asked: [LyricSpans.spans] null when the song has none. */
-    private class LyricSpans(val spans: List<LoopMix.Span>?)
 
-    private val lyricSpans = java.util.concurrent.ConcurrentHashMap<String, LyricSpans>()
-    private val lyricsAsked = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-
-    /** Asks for [item]'s synced lyrics once; a loop they vouch for needs no vocal mask. */
-    private fun askLyrics(item: MediaItem, durationMs: Long) {
-        val id = item.mediaId
-        if (!lyricsAsked.add(id)) return
-        scope.launch(Dispatchers.IO) {
-            val lines = runCatching { syncedLines(item, durationMs) }.getOrNull()
-            // Only line-synced lyrics say where a voice is; plain text says nothing about time.
-            val spans = lines?.takeIf { found -> found.count { it.timeMs > 0 } >= 4 }?.let { found ->
-                LoopMix.sungSpans(
-                    found.map { line ->
-                        val end = line.sungUntilMs ?: line.words.lastOrNull()?.endMs
-                        LoopMix.Line(line.timeMs, end, blank = line.isGap || line.text.isBlank())
-                    },
-                )
-            }
-            lyricSpans[id] = LyricSpans(spans)
-        }
-    }
-
-    /** Why [current] -> [next] can't be a loop mix right now, or null when it can. */
-    private fun loopRefusalFor(
-        player: ExoPlayer,
-        current: MediaItem,
-        next: MediaItem,
-        state: SmartAnalysis,
-        durationMs: Long,
-        nextDurationMs: Long,
-    ): String? = when {
-        !LoopMixRenderer.available -> "no renderer"
-        AppSettings.playbackSpeed.value != 1f -> "playback speed is not 1x"
-        player.skipSilenceEnabled -> "skip silence is on"
-        SleepTimer.afterTrack.value -> "sleep timer"
-        state.current != TrackAnalysisState.ANALYSED || state.next != TrackAnalysisState.ANALYSED -> "waiting on analysis"
-        isSourceBacked(current) || isSourceBacked(next) -> "analysed off another recording"
-        // The decks are decoded from a complete cached copy of each song. A song seeked into, or
-        // mid quality upgrade, may not have one yet: a wait, not a mix armed to fail ("the decks
-        // would not build"), which would cost the pair its loop.
-        !loopCopyFor(current, durationMs) -> "waiting on ${current.mediaMetadata.title ?: "this song"}'s audio in the cache"
-        !loopCopyFor(next, nextDurationMs) -> "waiting on ${next.mediaMetadata.title ?: "the next song"}'s audio in the cache"
-        // A sink that has not played yet (paused, a restored queue, players rebuilt after an output
-        // change such as earbuds connecting) reads as never configured: a wait, not a limit.
-        loopPortOf(player)?.let { it.sampleRate == 0 && !it.precision } == true -> "waiting on the audio output"
-        loopPortOf(player)?.supportsLoopMix != true -> "this output can't take it (" +
-            (loopPortOf(player)?.let { "precision=${it.precision} ch=${it.channelCount} rate=${it.sampleRate}" } ?: "no port") + ")"
-        loopPortOf(standby()) == null -> "no standby sink"
-        else -> null
-    }
-
-    private val loopCopyChecked = HashMap<String, Pair<Boolean, Long>>()
-
-    /** [loopCopyReady], remembered for [LOOP_COPY_RECHECK_MS] when it says no: it reads container headers. */
-    private fun loopCopyFor(item: MediaItem, durationMs: Long): Boolean {
-        val now = SystemClock.elapsedRealtime()
-        loopCopyChecked[item.mediaId]?.let { (ready, at) ->
-            if (ready || now - at < LOOP_COPY_RECHECK_MS) return ready
-        }
-        val ready = loopCopyReady(item, durationMs)
-        loopCopyChecked[item.mediaId] = ready to now
-        return ready
-    }
-
-    /** A track whose analysis reads a matched YouTube recording rather than what plays. */
-    private fun isSourceBacked(item: MediaItem): Boolean {
-        val uri = item.localConfiguration?.uri ?: return true
-        return uri.getQueryParameter("v") == null && uri.authority == "source"
-    }
-
-    /**
-     * The loop mix for [current] -> [next], planned once per pair and analysis,
-     * or null when the pair gets none (see [loopRefusal]).
-     */
-    private fun loopPlanFor(
-        player: ExoPlayer,
-        current: MediaItem,
-        next: MediaItem,
-        currentAnalysis: TrackAnalysis,
-        nextAnalysis: TrackAnalysis,
-        durationMs: Long,
-        nextDurationMs: Long,
-        state: SmartAnalysis,
-    ): LoopMix.Plan? {
-        val pair = "${current.mediaId}->${next.mediaId}"
-        loopRefusalFor(player, current, next, state, durationMs, nextDurationMs)?.let { why ->
-            noteLoopVerdict(pair, null, why)
-            return null
-        }
-        askLyrics(current, durationMs)
-        askLyrics(next, nextDurationMs)
-        val outLyrics = lyricSpans[current.mediaId]
-        val inLyrics = lyricSpans[next.mediaId]
-        if (outLyrics == null || inLyrics == null) {
-            noteLoopVerdict(pair, null, "waiting on lyrics")
-            return null
-        }
-        val key = "$pair|${System.identityHashCode(currentAnalysis)}|${System.identityHashCode(nextAnalysis)}"
-        val cached = loopPlanned
-        // Kept while its loop is still far enough ahead to set up; a seek past
-        // that plans again from the new playhead.
-        if (key == loopPlanKey && (cached == null || cached.out.loopStart * 1000 - player.currentPosition >= LOOP_MIN_LEAD_MS)) {
-            return cached
-        }
-        val why = StringBuilder()
-        val plan = LoopMix.plan(
-            out = currentAnalysis,
-            outDuration = durationMs / 1000.0,
-            inn = nextAnalysis,
-            inDuration = nextDurationMs / 1000.0,
-            earliestOutSec = player.currentPosition / 1000.0 + LOOP_SETUP_SECONDS,
-            sungOut = outLyrics.spans,
-            sungIn = inLyrics.spans,
-            why = why,
-        )
-        loopPlanKey = key
-        loopPlanned = plan
-        val lyricsNote = "lyrics ${if (outLyrics.spans != null) "out" else "-"}/${if (inLyrics.spans != null) "in" else "-"}"
-        noteLoopVerdict(pair, plan, if (plan == null) "$why; $lyricsNote" else null)
-        return plan
-    }
-
-    private fun noteLoopVerdict(pair: String, plan: LoopMix.Plan?, refusal: String?) {
-        loopRefusal = refusal
-        val verdict = "$pair: " + (plan?.let { "loop mix at ${"%.2f".format(Locale.ROOT, it.out.loopStart)}s · ${describeLoop(it)}" } ?: "no loop mix ($refusal)")
-        if (verdict == lastLoopVerdict) return
-        lastLoopVerdict = verdict
-        Log.d(TAG, "loop $verdict")
-    }
-
-    /** "out 4-bar, clear by lyrics · in 2-bar, clear by mask · 111 → 85 BPM over 11 bars". */
-    private fun describeLoop(plan: LoopMix.Plan): String {
-        val from = plan.out.bpm.roundToInt()
-        val to = plan.targetBpm.roundToInt()
-        val tempo = if (from == to) "$from BPM" else "$from → $to BPM over ${plan.rampBars} bars"
-        val fold = when {
-            plan.fold > 1 -> " (next in double time)"
-            plan.fold < 1 -> " (next in half time)"
-            else -> ""
-        }
-        fun side(pick: LoopMix.Pick): String {
-            val by = when (pick.checkedBy) {
-                LoopMix.Check.LYRICS -> "lyrics"
-                LoopMix.Check.MASK -> "mask"
-                LoopMix.Check.LYRICS_AND_MASK -> "lyrics + mask"
-            }
-            return "${pick.bars}-bar, clear by $by"
-        }
-        val inPlays = if (plan.inRepeats) "" else " (plays through, its opening)"
-        return "out ${side(plan.out)} · in ${side(plan.inn)}$inPlays · $tempo$fold"
-    }
 
     /**
      * Starts building the decks, [LOOP_ARM_LEAD_MS] before the loop: decoding
@@ -3326,8 +3165,7 @@ class CrossfadeController(
     /** The loop mix isn't happening after all: the pair takes the planner's blend instead. */
     private fun loopFallBack(reason: String) {
         Log.d(TAG, "loop mix falls back to a blend: $reason")
-        loopPlanned = null
-        loopRefusal = reason
+        loopPlanner.fellBack(reason)
         loopBail(reason, settle = false)
     }
 
@@ -3370,14 +3208,14 @@ class CrossfadeController(
             }
             val aligned = session.alignedErrorMs.takeIf { it.isFinite() }
                 ?.let { " · handover ${"%+.1f".format(Locale.ROOT, it)} ms" }.orEmpty()
-            return "Automix · $stage · ${describeLoop(session.plan)}$aligned"
+            return "Automix · $stage · ${loopPlanner.describe(session.plan)}$aligned"
         }
         val nextIndex = player.nextMediaItemIndex
         val next = if (nextIndex == C.INDEX_UNSET) null else player.getMediaItemAt(nextIndex)
-        val planned = loopPlanned
-        if (planned != null && next != null && loopPlanKey?.startsWith("${item.mediaId}->${next.mediaId}|") == true) {
+        val planned = loopPlanner.planned
+        if (planned != null && next != null && loopPlanner.isPlannedFor(item.mediaId, next.mediaId)) {
             val inSeconds = (planned.out.loopStart - player.currentPosition / 1000.0).coerceAtLeast(0.0)
-            return "Automix · loop mix in ${ceil(inSeconds).toInt()} s · ${describeLoop(planned)}"
+            return "Automix · loop mix in ${ceil(inSeconds).toInt()} s · ${loopPlanner.describe(planned)}"
         }
         val plan = lastSmartPlan
         val window = AppSettings.smartTransitionWindow.value
@@ -3399,7 +3237,7 @@ class CrossfadeController(
             val bars = if (plan.beatSeconds > 0) (plan.fadeSeconds / (4 * plan.beatSeconds)).roundToInt() else 0
             val length = if (bars > 0) "$bars bars" else "${"%.1f".format(Locale.ROOT, plan.fadeSeconds)} s"
             val why = plan.policyReasons.firstOrNull()?.let { " · $it" }.orEmpty()
-            val noLoop = loopRefusal?.let { " · no loop: $it" }.orEmpty()
+            val noLoop = loopPlanner.refusal?.let { " · no loop: $it" }.orEmpty()
             return when (plan.transitionStyle) {
                 TransitionStyle.EQUAL_POWER -> "Automix · crossfading $whenText · ${"%.0f".format(Locale.ROOT, plan.fadeSeconds)} s$why$noLoop"
                 TransitionStyle.DJ_FILTER -> "Automix · filter mix $whenText · $length$why$noLoop"
@@ -4806,14 +4644,9 @@ class CrossfadeController(
         /** The loop mix's tick: fine enough for the handoff and the beat pulse, which land on beats. */
         const val LOOP_STEP_MS = 20L
 
-        /** The loop mix's setup: how far ahead its loop must start, and when its decks start building. */
-        const val LOOP_SETUP_SECONDS = 15.0
+        /** When the loop mix's decks start building, ahead of its loop (see [LoopMixPlanner] for its planning). */
         const val LOOP_ARM_LEAD_MS = 12_000L
-        const val LOOP_MIN_LEAD_MS = 9_000L
         const val LOOP_BUILD_TIMEOUT_MS = 8_000L
-
-        /** How long a "no complete cached copy" answer stands before it is asked again. */
-        const val LOOP_COPY_RECHECK_MS = 3_000L
 
         /** After the incoming player starts, how long its clock settles before it is measured against the deck. */
         const val LOOP_ALIGN_SETTLE_SECONDS = 1.2
