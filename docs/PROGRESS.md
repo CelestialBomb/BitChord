@@ -13,7 +13,7 @@ reference (last commit `55713bb2`). Spec 0.7.
 |---|---|
 | 0. Branch and docs (brief, CLAUDE.md, .clinerules, spec 0.7, this log) | Done |
 | 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done and pushed** 19 Nov. Phone checklist 1-7 pass (2 after the settle fix `5995624c`); item 2's no-mix retest goes to stage 3 |
-| 2. Styles, blend length, Mix on skip; fixtures 014-018 | Planned (`C:\Users\kcbum\.claude\plans\transitions-v2-stage-2.md`), waiting for the user's go |
+| 2. Styles, blend length, Mix on skip; fixtures 014-018 | **Done in code** 19 Nov, tests pass; phone check pending |
 | 3. Automatic loop mix and the flush fix (dev-only adb hook) | Not started |
 | 4. Custom transitions; fixtures 019-023 | Not started |
 | 5. Cleanup and independent review | Not started |
@@ -27,6 +27,41 @@ Decisions for the rebuild:
   `player.shuffleModeEnabled`, which stays false under the app's own shuffle.
 - Album title and ID reach the planner only with Beat-aware on. The old branch always passed
   the title, and v1.9.1's live / spoken-word rule (R4) reads it, so Off was not v1.9.1.
+
+### Stage 2: style, blend length, Mix on skip (19 Nov)
+
+Plan: `C:\Users\kcbum\.claude\plans\transitions-v2-stage-2.md` (user's go 19 Nov).
+
+Tests: shared 181 in 25 suites, app 1254 in 114 (1 skipped), 0 failures. Fixtures 001-013 unchanged
+at every commit; 014-018 back and passing.
+
+| Commit | What |
+|---|---|
+| `16a2a17c` | Shared `MixStyle`, `BlendLength`, `applyMixStyle`; fixtures 014-018 |
+| `c5898228` | Settings `automix_style`, `automix_blend_length` (same keys as the old branch); `TransitionPlanning.restyle` |
+| `37cd148f` | Shared `decideSkip`, `skipFallback`; `SkipBlendTest` |
+| `e0ecc615` | Mix on skip: `SkipBlender` (app), controller hooks, `PlaybackService` next hooks, `skipped` handoff, setting `mix_on_skip` |
+| `58d01f84` | A skip blend publishes its mix view |
+
+Answers the plan left open: a skip blend that cannot start (next song not ready within 2.5 s,
+paused while waiting) is no failure, and the skip happens plainly. One that fails mid-blend
+(incoming idle, player error) is recorded against the pair like any blend.
+Same as the old branch: strings in English only; the old branch's dead `armDeadline` write for
+skip blends is not carried over.
+
+Phone checklist (dev app; the capture runs throughout; any setting changed for a test is
+announced and restored):
+1. Settings > Automix shows Mix style, Blend length and Mix on skip. Your phone keeps its saved
+   values from the old branch (Long, Mix on skip on).
+2. Fade, Rise, Quick and Short, Long change a track-end mix (`plan` line shows `style=`).
+3. Mix on skip on, Next mid-song: a 2-4 s blend on the beat; the screen shows the new song at once.
+4. Swipe, notification and headset Next blend too; a queue tap and Previous are instant.
+5. Two quick presses skip two songs, no stacked blend (`skip-cut-busy` / `skip-cut-rapid`).
+6. Next onto a song not downloaded yet: a short plain fade (`skip-fade`) or a plain skip after
+   2.5 s, never silence.
+7. Next with under 5 s left, while paused, or with Mix on skip off: instant.
+8. A skipped song is not submitted to ListenBrainz as listened to.
+9. During a skip blend, tapping "Mixing" shows the overview.
 
 ### Stage 1: base and engine (18 Nov)
 

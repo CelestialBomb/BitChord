@@ -10,7 +10,7 @@ TRANSITIONS_RECORD=1 ./gradlew :shared:jvmTest
 
 `shared/src/jvmTest/.../TransitionFixturesTest.kt` writes the files. `TRANSITIONS_FIXTURES_DIR` overrides their directory. Recording is never enabled in CI.
 
-On Android's `transitions-v2` rebuild, fixtures return with their features: 001-013 in stage 1, 014-018 (style and length) in stage 2, 019-023 (custom transitions) in stage 4.
+On Android's `transitions-v2` rebuild, fixtures return with their features: 001-013 in stage 1, 014-018 (style and length) in stage 2 (back), 019-023 (custom transitions) in stage 4.
 
 ## Format
 
