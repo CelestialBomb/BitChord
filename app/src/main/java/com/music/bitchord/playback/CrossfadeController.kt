@@ -908,7 +908,8 @@ class CrossfadeController(
         current.isVideoOrigin || next.isVideoOrigin -> "video"
         player.repeatMode == Player.REPEAT_MODE_ONE -> "repeat one"
         SleepTimer.afterTrack.value -> "sleep timer"
-        failureGate.verdict(current.mediaId, next.mediaId) != TransitionFailureLog.Verdict.NORMAL -> "this pair failed before"
+        // A pair that only lost its loop mix may still be skip-blended: a skip blend never loops.
+        failureGate.verdict(current.mediaId, next.mediaId) >= TransitionFailureLog.Verdict.PLAIN_CROSSFADE -> "this pair failed before"
         else -> null
     }
 
@@ -1068,12 +1069,13 @@ class CrossfadeController(
         bail()
     }
 
-    /** Names the pair a failure of the transition starting now is held against. */
-    private fun markActive(out: ExoPlayer, nextIndex: Int, kind: String) {
+    /** Names the pair, and the kind, a failure of the transition starting now is held against. */
+    private fun markActive(out: ExoPlayer, nextIndex: Int, kind: TransitionFailureLog.Kind, label: String) {
         failureGate.begin(
             outgoingId = out.currentMediaItem?.mediaId.orEmpty(),
             incomingId = out.getMediaItemAt(nextIndex).mediaId,
             kind = kind,
+            label = label,
             atMs = out.currentPosition,
             durationMs = out.duration,
         )
@@ -1339,9 +1341,10 @@ class CrossfadeController(
         requestAnalysisAround(player, duration)
 
         // Failure record (v1.9.1 bug fix): a pair whose transition failed is
-        // never retried as it was. Once: a plain crossfade only; twice: nothing
-        // is armed. Without this the 250 ms re-planning re-armed the same
-        // failing mix at the same point.
+        // never retried as it was. A failed loop mix: the planner's blend
+        // without the loop; a failed blend: a plain crossfade only; a failed
+        // plain crossfade: nothing is armed. Without this the 250 ms
+        // re-planning re-armed the same failing mix at the same point.
         val gate = failureVerdict(player)
         if (gate == TransitionFailureLog.Verdict.NONE) {
             AppSettings.smartTransitionWindow.value = null
@@ -1349,6 +1352,7 @@ class CrossfadeController(
             return
         }
         val plainOnly = gate == TransitionFailureLog.Verdict.PLAIN_CROSSFADE
+        val noLoop = gate != TransitionFailureLog.Verdict.NORMAL
 
         // Only used before analysis lands, or when the evidence is too weak
         // for more than a plain fade (see [TransitionTier.PLAIN_CROSSFADE]):
@@ -1419,7 +1423,7 @@ class CrossfadeController(
 
         // The loop mix first: a pair it can do never reaches the blend below.
         // Never for a pair that failed before (failure record).
-        val loop = if (plainOnly) {
+        val loop = if (noLoop) {
             loopPlanned = null
             loopPlanKey = null
             noteLoopVerdict("${currentItem.mediaId}->${nextItem.mediaId}", null, "this pair failed before")
@@ -1730,9 +1734,17 @@ class CrossfadeController(
         outgoing = out
         incoming = into
         outgoingItemIndex = out.currentMediaItemIndex
+        // A skip blend and a mix the planner chose are blends; an equal-power
+        // fade at the end (standard, or Automix's plain crossfade) is plain.
+        val kind = if (skipBlender.pending != null || isRealMix()) {
+            TransitionFailureLog.Kind.BLEND
+        } else {
+            TransitionFailureLog.Kind.PLAIN
+        }
         markActive(
             out,
             nextIndex,
+            kind,
             when {
                 skipBlender.pending != null -> "skip blend"
                 smart -> "automix blend"
@@ -2864,7 +2876,7 @@ class CrossfadeController(
         outgoing = out
         incoming = into
         outgoingItemIndex = out.currentMediaItemIndex
-        markActive(out, nextIndex, "loop mix")
+        markActive(out, nextIndex, TransitionFailureLog.Kind.LOOP_MIX, "loop mix")
         watchStandby(into)
         armDeadline = SystemClock.elapsedRealtime() + LOOP_BUILD_TIMEOUT_MS
         holdAtEnd(out)

@@ -17,6 +17,9 @@ internal class FailureGate {
     private var outId: String? = null
     private var inId: String? = null
 
+    /** What the transition in flight is, which decides what its failure costs the pair. */
+    private var kind = TransitionFailureLog.Kind.PLAIN
+
     /** This transition's failure is on record already, so it counts once. */
     private var noted = false
 
@@ -33,12 +36,20 @@ internal class FailureGate {
     /** The song a position belongs to: the incoming one once it has the session. */
     fun songOf(handedOff: Boolean): String? = if (handedOff) inId else outId
 
-    /** A transition starts between [outgoingId] and [incomingId]. */
-    fun begin(outgoingId: String, incomingId: String, kind: String, atMs: Long, durationMs: Long) {
+    /** A transition of [kind] (named [label] in the log) starts between [outgoingId] and [incomingId]. */
+    fun begin(
+        outgoingId: String,
+        incomingId: String,
+        kind: TransitionFailureLog.Kind,
+        label: String,
+        atMs: Long,
+        durationMs: Long,
+    ) {
         outId = outgoingId
         inId = incomingId
+        this.kind = kind
         noted = false
-        TransitionLog.d("start $kind $pair at ${atMs}ms of ${durationMs}ms")
+        TransitionLog.d("start $label $pair at ${atMs}ms of ${durationMs}ms")
     }
 
     /** The transition is over, however it ended. */
@@ -64,8 +75,8 @@ internal class FailureGate {
         val out = outId ?: return
         val into = inId ?: return
         noted = true
-        val next = failures.recordFailure(out, into)
-        TransitionLog.w("failure ($what) for $pair at phase=$phase -> next attempt: $next")
+        val next = failures.recordFailure(out, into, kind)
+        TransitionLog.w("failure of a ${kind.name.lowercase()} ($what) for $pair at phase=$phase -> next attempt: $next")
     }
 
     /** What the record allows for [currentId] -> [nextId], logged once per pair and verdict. */
@@ -77,10 +88,10 @@ internal class FailureGate {
             if (line != lastGateLine) {
                 lastGateLine = line
                 TransitionLog.w(
-                    "gate $line -> " + if (verdict == Verdict.NONE) {
-                        "nothing armed, the song plays to its end"
-                    } else {
-                        "plain crossfade only (no loop mix, no DJ blend)"
+                    "gate $line -> " + when (verdict) {
+                        Verdict.NONE -> "nothing armed, the song plays to its end"
+                        Verdict.PLAIN_CROSSFADE -> "plain crossfade only (no loop mix, no DJ blend)"
+                        else -> "no loop mix (the planner's blend, DJ included)"
                     },
                 )
             }
