@@ -49,6 +49,35 @@ paused while waiting) is no failure, and the skip happens plainly. One that fail
 Same as the old branch: strings in English only; the old branch's dead `armDeadline` write for
 skip blends is not carried over.
 
+#### Stage 2 phone results (19 Nov, 02:18 build)
+
+| # | Result | Evidence |
+|---|---|---|
+| 1 | PASS | Seen by the user |
+| 2 | PARTIAL | `style=fade/medium`, `rise/short` etc. on `plan` lines and restyled plans (`(planner DJ_BLEND ...)`). Two loop mixes failed during it (below) |
+| 3-7 | PASS | `skip skip-blend` with `skip blend starts` and `handoff at in=...` about 30 ms later; `skip-cut-busy` / `skip-cut-rapid` / `skip-cut-guard (paused / this pair failed before)` / `skip-cut-off` as expected |
+| 8 | PASS by code | ListenBrainz isn't set up on the phone. A skip blend hands over with `skipped`, so `onTrackBecameCurrent(previousEnded = false)`: no finished listen is submitted and "sleep after this song" doesn't fire |
+| 9 | FAIL, fixed in `553831cd` | The overview said "No Automix transition coming up" |
+
+**The "repeat bug" (check 2) was two loop mixes breaking, not the settle being bypassed.**
+Neither style/length nor the skip blend touches those paths.
+- 02:22:58, Hugs -> Lifer: the loop handed over at `in=1633ms`, and Lifer's position stayed at
+  1.633 s while the loop rendered. 10 s later Media3 raised `StuckPlayerException: Player stuck
+  playing with no progress for 10000 ms` (`StuckPlayingDetector`). The failure record took it,
+  and the app's recovery reloaded Lifer from 1.6 s, so its start played twice.
+- 02:26:49, Mahiru No Tsuki -> Are you coming back?: "a sink was flushed" 20.4 s after takeover
+  (the same ~20.5 s as on 16-18 Nov). The settle put the song at the mix's position (234.1 s),
+  and the plain crossfade at 236.8 s started the next song again from 0.
+- Fix `9304e202` (v1.9.1 bug): both players get a 240 s stuck-playing timeout, longer than any
+  loop mix (32 bars at 40 BPM, about 192 s). This is the stage 3 flush lead: the same 10 s timer
+  on the standby, whose errors the controller never sees, explains the ~20.5 s flush. Whether it
+  cures the flush shows on the phone; stage 3 still builds the adb hook to prove it.
+
+**Check 9:** a skip blend is over in 2-4 s and hands over at once, while the "Mixing" label and
+echo tail outlast it. A tap usually came after `finish()` had cleared the view, so the popup
+found nothing. That is inferred: taps aren't logged, but it is the only path to that message.
+Fix: a skip blend that played out keeps its view for 5 s.
+
 Phone checklist (dev app; the capture runs throughout; any setting changed for a test is
 announced and restored):
 1. Settings > Automix shows Mix style, Blend length and Mix on skip. Your phone keeps its saved
