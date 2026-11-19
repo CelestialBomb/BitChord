@@ -219,6 +219,13 @@ const val ACTION_TOGGLE_FAVORITE = "com.music.bitchord.action.TOGGLE_FAVORITE"
 /** Session command used by the media notification's and the 4×1 widget's Shuffle button. */
 const val ACTION_TOGGLE_SHUFFLE = "com.music.bitchord.action.TOGGLE_SHUFFLE"
 
+/**
+ * Media3's stuck-player check, for both players. Its 10 s default fired inside
+ * loop mixes, which hold the player's position for the length of the mix: up
+ * to 32 bars, about 192 s at the planner's slowest 40 BPM. See [buildPlayer].
+ */
+private const val STUCK_PLAYING_TIMEOUT_MS = 240_000
+
 /** Session actions exposed to Android Auto for the track that is playing. */
 const val ACTION_START_STATION = "com.music.bitchord.action.START_STATION"
 const val ACTION_REVERT_TO_ORIGINAL = "com.music.bitchord.action.REVERT_TO_ORIGINAL"
@@ -3477,6 +3484,12 @@ class PlaybackService : MediaLibraryService() {
         // Back restarts the track once you're this far into it; only a
         // press before that steps to the previous one.
         .setMaxSeekToPreviousPositionMs(BACK_RESTARTS_AFTER_MS)
+        // v1.9.1 bug fix: during a loop mix the sink plays the mix while the
+        // player's own position is held, and Media3's stuck-player check
+        // (10 s of "playing with no progress" by default) failed the player
+        // mid-mix. The mix then broke off and the song's start or end replayed.
+        // Longer than the longest loop mix the planner can make.
+        .setStuckPlayingDetectionTimeoutMs(STUCK_PLAYING_TIMEOUT_MS)
         .build()
 
     /**
