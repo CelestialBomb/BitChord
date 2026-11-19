@@ -975,6 +975,19 @@ class CrossfadeController(
         // mix view read the span from here.
         fadeEndMs = out.currentPosition + fadeMs
         startFade()
+        // The view [startFade] published has no waveforms yet: decoded now,
+        // after the incoming player is ready rather than competing with it.
+        val outItem = out.currentMediaItem
+        val inItem = into.currentMediaItem
+        if (outItem != null && inItem != null && AppSettings.smartMixView.value != null) {
+            val geometry = mixGeometry()
+            prefetchMixWaves(
+                outItem, inItem,
+                out.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L,
+                into.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: queuedDurationMs(inItem),
+                geometry.outStart, geometry.outEnd, geometry.inStart, geometry.ratio,
+            )
+        }
     }
 
     /** The skip the listener asked for, done the ordinary way after a skip blend could not start. */
@@ -2505,14 +2518,17 @@ class CrossfadeController(
      * will ride, with whichever waveforms have already been decoded.
      */
     private fun publishMixView(out: ExoPlayer, into: ExoPlayer) {
-        val plan = planInFlight ?: return
+        // A Mix on skip blend has no planner plan, only its decision. Without
+        // this it published no view while the "Mixing" label still offered
+        // one: the popup found nothing and closed with "No Automix transition
+        // coming up" over an audible mix.
+        val beatSeconds = planInFlight?.beatSeconds ?: skipBlender.pending?.beatSeconds ?: return
         val outItem = out.currentMediaItem ?: return
         val inItem = into.currentMediaItem ?: return
         val geometry = mixGeometry()
         val outStart = geometry.outStart
         val outEnd = geometry.outEnd
         val outSpan = geometry.outSpan
-        val beatSeconds = plan.beatSeconds
         val beats = if (beatSeconds > 0) (outSpan / beatSeconds).roundToInt() else 0
         val marks = beatMarks(outgoingAnalysis, outStart, outEnd, beatSeconds)
         val wallSpan = (fadeMs * if (render.advanced) mediaRatio else 1.0).toFloat()
