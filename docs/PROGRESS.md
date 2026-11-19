@@ -12,8 +12,8 @@ reference (last commit `55713bb2`). Spec 0.7.
 | Stage (brief section 6) | Status |
 |---|---|
 | 0. Branch and docs (brief, CLAUDE.md, .clinerules, spec 0.7, this log) | Done |
-| 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done**, tests pass. Phone checklist run 18-19 Nov (results below): 1, 3, 4, 6, 7 pass; 2 pass after the settle fix `5995624c`; 5 not confirmable from the log. Not pushed yet |
-| 2. Styles, blend length, Mix on skip; fixtures 014-018 | Not started |
+| 1. Base and engine: planner options, R3 album gapless, failure record, queue hook, provisional window; fixtures 001-013 | **Done and pushed** 19 Nov. Phone checklist 1-7 pass (2 after the settle fix `5995624c`); item 2's no-mix retest goes to stage 3 |
+| 2. Styles, blend length, Mix on skip; fixtures 014-018 | Planned (`C:\Users\kcbum\.claude\plans\transitions-v2-stage-2.md`), waiting for the user's go |
 | 3. Automatic loop mix and the flush fix (dev-only adb hook) | Not started |
 | 4. Custom transitions; fixtures 019-023 | Not started |
 | 5. Cleanup and independent review | Not started |
@@ -95,7 +95,7 @@ on a capture runs for the whole check
 | 2 | PASS after `5995624c` | 18 Nov, Beat-aware off: 4 of 5 mixes normal; the failed loop and its jump back are analysed above. 19 Nov ~00:05 retest: the pair said "this pair failed before" and got no mix (NONE). Not in the log. **Note:** the failure record lives in memory per app process, and the 17:39 install restarted the app. So that NONE means two new failures of the pair in the new process, not the 18 Nov ones; their cause is unknown. Re-check with the capture running |
 | 3 | PASS | User: DRAMATICA gapless with shuffle off, normal mixes with shuffle on. Not in the log |
 | 4 | PASS | User, 01:03-01:05: "analysing the next song · provisional mix in 207 s" with a dimmed window, then a 4-bar loop mix (199 -> 185 BPM) that ran cleanly. Not in the log |
-| 5 | Not confirmed | Done by the user; the `queue changed` / `plans dropped: queue changed` lines had rotated out. Redo with the capture |
+| 5 | PASS | Redone 19 Nov 01:47-01:49 on 3 queues with the capture running: 5 changes, each logged `queue changed: next pair A -> B` and `plans dropped: queue changed`, and the new pair was re-planned 0.06-0.24 s later (a new loop mix found once). For songs not yet analysed, the window was dimmed (`provisional: next is WAITING/ANALYSING`) and then `shown`. All changes came while idle, so nothing was cancelled. No crash |
 | 6 | PASS | User ~01:09: "this pair failed before", plain crossfade, no repeated ending. The log's tail shows it: `1EkVojVV_3I->4iqrRR84Znk` `smart-plain-crossfade`, handoff 01:10:49, finish 01:10:52 |
 | 7 | PASS, with a stage 3 item | Log: Previous at 01:10:58-01:11:00 and again at 01:12:28-32 (`plans dropped: previous`), then the same pair planned its loop mix again (record cleared). Both times the loop failed while arming, then a plain crossfade played cleanly (01:11:52-01:12:02, 01:13:17) |
 
